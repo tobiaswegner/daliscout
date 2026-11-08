@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseCapture } from '@dali-scout/core';
-import { CH, type ConnectTarget, type SaveRequest, type SendRequest } from '../shared';
+import { CH, type ConnectTarget, type SaveRequest, type SendRequest, type SimCommand } from '../shared';
 import { createDeviceTransport, listDevices } from './devices';
 import { SourceManager } from './source';
 
@@ -30,6 +30,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.speed, (_e, speed: number) => source.setReplaySpeed(speed));
   ipcMain.handle(CH.devices, () => listDevices());
   ipcMain.handle(CH.send, (_e, req: SendRequest) => source.send(req));
+  ipcMain.handle(CH.simCommand, (_e, cmd: SimCommand) => source.simCommand(cmd));
 
   ipcMain.handle(CH.connect, async (_e, target: ConnectTarget) => {
     if (target.kind === 'virtual') return source.startVirtual();
