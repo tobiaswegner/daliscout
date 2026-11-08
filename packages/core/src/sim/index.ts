@@ -4,3 +4,8 @@ export * from './gear.js';
 export * from './simulation.js';
 export * from './commissioning.js';
 export * from './clock.js';
+export * from './color.js';
+export * from './ext.js';
+export { DT8_PRESETS, createDt8State, renderColour, resolveDt8Config } from './dt8.js';
+export { createDt0State } from './dt0.js';
+export * from './visual.js';

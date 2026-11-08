@@ -2,11 +2,11 @@
 
 DALI bus monitor and gear simulator (Electron + TypeScript). See [docs/SPEC.md](docs/SPEC.md) for the full spec and milestone plan.
 
-## Status: milestone 3 (gear simulator on a virtual bus)
+## Status: milestone 4 (DT8 colour and DT0 gear)
 - `packages/core` — frame model, stateful IEC 62386-102 decoder, answer correlation, `.dscap` capture format
 - `packages/transports` — transport interface, in-process virtual bus, capture replay
 - `packages/transports` also has the USB drivers: **LUBA** (Lunatone DALI-2 USB, serial) and the legacy **DALI USB 24138923** (HID). Both are unit-tested against fake devices; the HID layout is **unverified on real hardware** (see `scripts/hid-probe.mjs`).
-- `packages/core/src/sim` — simulated DALI control gears (IEC 62386-102): levels, fading, scenes, groups, send-twice, commissioning, queries, fault injection. Start the **Simulator** tab, then *Start virtual bus*; the Monitor tab shows every telegram, including the gears' answers.
+- `packages/core/src/sim` — simulated DALI control gears (IEC 62386-102): levels, fading, scenes, groups, send-twice, commissioning, queries, fault injection. Gear can be plain, DT0 (fluorescent) or DT8 (RGB, RGBW, RGB+CT, CT, xy) with colour visualisation; "65-gear demo" loads a mixed bus. Start the **Simulator** tab, then *Start virtual bus*; the Monitor tab shows every telegram, including the gears' answers.
 - `apps/desktop` — Electron monitor: device selection, virtual bus, capture replay, live table, structured filters + presets, statistics, send panel, CSV/text/.dscap export
 
 ## Develop

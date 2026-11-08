@@ -118,3 +118,17 @@ body { background: var(--bg); color: var(--fg); font: 13px system-ui, sans-serif
 .rline.k-special { background: var(--special); } .rline.k-answer { background: var(--answer); } .rline.k-error { background: var(--error); }
 .pad { padding: 20px; } .busy { color: var(--accent); }
 .pane { flex: 1; flex-direction: column; min-height: 0; }
+
+/* ---- DT8 / DT0 (milestone 4) ---- */
+.t-colour { font-size: 11px; color: var(--muted); }
+.badge.ct { background: var(--query); }
+.detail-sim fieldset.colour { display: grid; gap: 6px; }
+.c-top { display: flex; gap: 10px; align-items: center; }
+.swatch { width: 48px; height: 48px; border-radius: 8px; border: 1px solid var(--line); }
+.cie { border: 1px solid var(--line); border-radius: 6px; cursor: crosshair; max-width: 100%; height: auto; }
+.c-controls { display: grid; gap: 4px; }
+.bars { display: flex; gap: 6px; align-items: flex-end; height: 70px; }
+.bar { position: relative; width: 22px; height: 100%; border: 1px solid var(--line); border-radius: 3px; display: flex; align-items: flex-end; }
+.bar .fill { width: 100%; border-radius: 2px; }
+.bar small { position: absolute; bottom: -14px; left: 0; right: 0; text-align: center; font-size: 9px; color: var(--muted); }
+.bars { margin-bottom: 14px; }

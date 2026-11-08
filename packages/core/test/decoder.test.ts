@@ -89,7 +89,7 @@ describe('device type extension', () => {
     d.decode(makeFrame('C1 08'));
     const r = d.decode(makeFrame('0B E2'));
     expect(r.class).toBe('extended');
-    expect(r.command).toBe('DT8 EXTENDED COMMAND');
+    expect(r.command).toBe('DT8 ACTIVATE');
   });
   it('enable DT applies to one frame only', () => {
     const d = new Decoder();

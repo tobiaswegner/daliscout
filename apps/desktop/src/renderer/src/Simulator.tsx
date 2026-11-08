@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import {
-  buildCommand, buildDapc, fadeRateStepsPerSecond, fadeTimeSeconds, extendedFadeUs, levelToPercent, toHex,
-  type GearState, type Row
+  buildCommand, buildDapc, channelToLevel, colourLabel, extendedFadeUs, fadeRateStepsPerSecond, fadeTimeSeconds,
+  gearBrightness, gearColour, kelvinToXy, levelToPercent, mirekToKelvin, mirekToXy, seqSetRgb, seqSetTc, seqSetXy,
+  toHex, xyToRgb, type GearState, type Row, type SeqFrame, type TargetSpec
 } from '@dali-scout/core';
-import type { SimCommand, SimCommandResult, SimGearView, SimState } from '../../shared';
+import type { GearType, SimCommand, SimCommandResult, SimGearView, SimState } from '../../shared';
 import { SendPanel } from './SendPanel';
 
 interface Props {
@@ -16,11 +17,16 @@ interface Props {
 }
 
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5, 10];
+const GEAR_TYPES: [GearType, string][] = [
+  ['plain', 'Plain gear'], ['dt0', 'DT0 fluorescent'], ['rgb', 'DT8 RGB'], ['rgbw', 'DT8 RGBW'],
+  ['rgb-ct', 'DT8 RGB+CT'], ['tc', 'DT8 CT only'], ['xy', 'DT8 xy only']
+];
 
 export function Simulator({ sim, run, active, canSend, recent }: Props) {
   const [selected, setSelected] = useState<number | null>(null);
   const [count, setCount] = useState(8);
   const [addressed, setAddressed] = useState(true);
+  const [gearType, setGearType] = useState<GearType>('plain');
   const [scene, setScene] = useState(0);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
@@ -57,8 +63,13 @@ export function Simulator({ sim, run, active, canSend, recent }: Props) {
       <div className="toolbar second">
         <span>Add</span>
         <input type="number" min={1} max={65} value={count} style={{ width: 56 }} onChange={(e) => setCount(Number(e.target.value))} />
+        <select value={gearType} onChange={(e) => setGearType(e.target.value as GearType)}>
+          {GEAR_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+        </select>
         <label className="inline"><input type="checkbox" checked={addressed} onChange={(e) => setAddressed(e.target.checked)} /> with short addresses</label>
-        <button disabled={busy} onClick={() => exec({ type: 'add', count, addressed })}>Add gears</button>
+        <button disabled={busy} onClick={() => exec({ type: 'add', count, addressed, gearType })}>Add gears</button>
+        <button disabled={busy} title="20 RGB+CT, 10 RGBW, 10 RGB, 5 CT, 10 DT0, 10 plain"
+          onClick={() => { if (sim.gears.length === 0 || confirm('Replace all gears with the 65-gear demo?')) void exec({ type: 'scenario', name: 'mixed65' }); }}>65-gear demo</button>
         <button disabled={busy || sim.gears.length === 0} onClick={() => { if (confirm('Remove all simulated gears?')) void exec({ type: 'clear' }); }}>Remove all</button>
         <span className="sep" />
         <button disabled={busy || sim.gears.length === 0} onClick={() => exec({ type: 'commission', all: false })}
@@ -120,17 +131,16 @@ export function Simulator({ sim, run, active, canSend, recent }: Props) {
 
 // ---- visuals ---------------------------------------------------------------------------------
 
-/** Perceived brightness 0..1 of a level (the DALI curve is logarithmic, perception about linear in %). */
-const brightness = (level: number) => levelToPercent(level) / 100;
-
 function lampStyle(s: GearState): React.CSSProperties {
-  const i = s.faults.lampFailure ? 0 : brightness(s.actualLevel);
+  const i = gearBrightness(s);
+  const [r, g, b] = gearColour(s);
   return {
-    background: `radial-gradient(circle at 50% 40%, rgba(255,236,190,${0.35 + 0.65 * i}), rgba(255,184,77,${0.15 + 0.85 * i}))`,
+    background: `radial-gradient(circle at 50% 40%, rgba(${mix(r, 255, 0.45)},${mix(g, 255, 0.45)},${mix(b, 255, 0.45)},${0.35 + 0.65 * i}), rgba(${r},${g},${b},${0.15 + 0.85 * i}))`,
     opacity: i === 0 ? 0.18 : 0.25 + 0.75 * i,
-    boxShadow: i > 0 ? `0 0 ${6 + 26 * i}px ${2 + 8 * i}px rgba(255,200,110,${0.15 + 0.6 * i})` : 'none'
+    boxShadow: i > 0 ? `0 0 ${6 + 26 * i}px ${2 + 8 * i}px rgba(${r},${g},${b},${0.15 + 0.6 * i})` : 'none'
   };
 }
+const mix = (c: number, to: number, f: number) => Math.round(c + (to - c) * f);
 
 function Lamp({ s, size = 44 }: { s: GearState; size?: number }) {
   return (
@@ -140,6 +150,14 @@ function Lamp({ s, size = 44 }: { s: GearState; size?: number }) {
       {s.faults.lampFailure && <span className="x">⚠</span>}
     </div>
   );
+}
+
+function colourText(s: GearState): string {
+  const d = s.dt8!;
+  if (d.mode === 'tc') return `${Math.round(mirekToKelvin(d.actual.tc))} K`;
+  if (d.mode === 'xy') return `x ${(d.actual.x / 65536).toFixed(2)} y ${(d.actual.y / 65536).toFixed(2)}`;
+  if (d.mode === 'primary') return d.actual.primary.slice(0, d.cfg.primaries).map((v) => Math.round(v / 655.34)).join('/');
+  return d.actual.rgbwaf.slice(0, d.cfg.rgbwaf).join('/');
 }
 
 const addr = (s: GearState) => (s.shortAddress === null ? '—' : String(s.shortAddress));
@@ -155,8 +173,10 @@ function Tile({ g, selected, onClick }: { g: SimGearView; selected: boolean; onC
       <Lamp s={s} />
       <div className="t-addr">{s.shortAddress === null ? 'no address' : `A${s.shortAddress}`}</div>
       <div className="t-level">{s.actualLevel === 0 ? 'off' : `${pct < 10 ? pct.toFixed(1) : Math.round(pct)} %`} {trend}</div>
+      {s.dt8 && <div className="t-colour">{colourText(s)}</div>}
       <div className="t-badges">
         {s.deviceTypes.map((d) => <span key={d} className="badge">DT{d}</span>)}
+        {colourLabel(s) && <span className="badge ct">{colourLabel(s)}</span>}
         {groups.slice(0, 4).map((i) => <span key={i} className="badge g">G{i}</span>)}
         {groups.length > 4 && <span className="badge g">+{groups.length - 4}</span>}
         {s.faults.offline && <span className="badge bad">offline</span>}
@@ -218,6 +238,9 @@ function Detail({ g, run, onGone }: { g: SimGearView; run: (c: SimCommand) => Pr
         <button onClick={async () => { await run({ type: 'remove', id: g.id }); onGone(); }}>Remove</button>
       </div>
 
+      {s.dt8 && <ColourPanel g={g} />}
+      {s.dt0 && <Dt0Panel s={s} />}
+
       <fieldset>
         <legend>Fault injection</legend>
         <label className="inline"><input type="checkbox" checked={s.faults.lampFailure}
@@ -261,3 +284,113 @@ function Detail({ g, run, onGone }: { g: SimGearView; run: (c: SimCommand) => Pr
 }
 
 const hex24 = (v: number) => v.toString(16).padStart(6, '0').toUpperCase();
+
+// ---- DT8 colour panel ------------------------------------------------------------------------
+
+const rgbCss = ([r, g, b]: [number, number, number]) => `rgb(${r},${g},${b})`;
+const rgbHex = ([r, g, b]: [number, number, number]) => '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+
+/** Send a scripted sequence to the bus (as the console would). */
+async function sendSeq(seq: SeqFrame[]): Promise<string | null> {
+  for (const f of seq) {
+    const r = await window.dali.send({ hex: toHex(f.data), sendTwice: !!f.sendTwice, expectReply: false });
+    if (!r.ok) return r.error;
+  }
+  return null;
+}
+
+// CIE 1931 chromaticity diagram geometry (x 0..0.8, y 0..0.9)
+const W = 220, H = 200;
+const px = (x: number) => 8 + (x / 0.8) * (W - 16);
+const py = (y: number) => H - 8 - (y / 0.9) * (H - 16);
+const LOCUS = Array.from({ length: 24 }, (_, i) => kelvinToXy(1800 * Math.pow(25000 / 1800, i / 23)));
+
+export function ColourPanel({ g }: { g: SimGearView }) {
+  const s = g.state, d = s.dt8!;
+  const [err, setErr] = useState<string | null>(null);
+  const target: TargetSpec | null = s.shortAddress === null ? null : { kind: 'short', value: s.shortAddress };
+  const send = async (seq: SeqFrame[]) => setErr(await sendSeq(seq));
+  const cur = gearColour(s);
+  const act = d.actual;
+  const pos = d.mode === 'xy' ? { x: act.x / 65536, y: act.y / 65536 } : d.mode === 'tc' ? mirekToXy(act.tc) : null;
+  const tri = d.cfg.primaryXy.slice(0, Math.min(d.cfg.primaries, 3));
+  const lo = d.cfg.physCoolestMirek, hi = d.cfg.physWarmestMirek;
+
+  return (
+    <fieldset className="colour">
+      <legend>Colour (DT8 {colourLabel(s)})</legend>
+      <div className="c-top">
+        <div className="swatch" style={{ background: rgbCss(cur), opacity: 0.2 + 0.8 * gearBrightness(s) }} />
+        <div className="muted">
+          Mode <b>{d.mode === 'tc' ? 'Tc' : d.mode === 'primary' ? 'primary N' : d.mode === 'rgbwaf' ? 'RGBWAF' : 'xy'}</b>
+          {d.fade && ' · fading'}
+          <br />{colourText(s)}
+          {(d.xyOutOfRange || d.tcOutOfRange) && <><br /><span className="warn">⚠ {d.xyOutOfRange ? 'xy out of gamut' : 'Tc out of range'}</span></>}
+        </div>
+      </div>
+
+      {d.cfg.xy && (
+        <svg className="cie" viewBox={`0 0 ${W} ${H}`} width={W} height={H}
+          onClick={(e) => {
+            if (!target) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            const x = ((e.clientX - r.left) / r.width * W - 8) / (W - 16) * 0.8;
+            const y = ((H - 8 - (e.clientY - r.top) / r.height * H) / (H - 16)) * 0.9;
+            void send(seqSetXy(target, x, y));
+          }}>
+          <rect width={W} height={H} fill="var(--bg)" />
+          {tri.length === 3 && <polygon points={tri.map((p) => `${px(p.x)},${py(p.y)}`).join(' ')} fill="rgba(128,128,128,0.15)" stroke="var(--muted)" />}
+          <polyline points={LOCUS.map((p) => `${px(p.x)},${py(p.y)}`).join(' ')} fill="none" stroke="var(--muted)" strokeDasharray="3 2" />
+          {[2700, 4000, 6500].map((k) => { const p = kelvinToXy(k); return <text key={k} x={px(p.x) + 4} y={py(p.y) - 3} fontSize="9" fill="var(--muted)">{k}K</text>; })}
+          {tri.map((p, i) => <circle key={i} cx={px(p.x)} cy={py(p.y)} r="3" fill={rgbCss(xyToRgb(p.x, p.y))} stroke="var(--muted)" />)}
+          {pos && <circle cx={px(pos.x)} cy={py(pos.y)} r="6" fill={rgbCss(cur)} stroke="#fff" strokeWidth="2" />}
+        </svg>
+      )}
+      {!target && <div className="muted">Commission this gear (give it an address) to control it from here.</div>}
+
+      <div className="c-controls">
+        <label className="inline">RGB
+          <input type="color" disabled={!target || d.cfg.rgbwaf < 3} value={rgbHex(cur)}
+            onChange={(e) => {
+              const v = e.target.value;
+              const c = [1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16));
+              void send(seqSetRgb(target!, channelToLevel(c[0]!), channelToLevel(c[1]!), channelToLevel(c[2]!)));
+            }} />
+        </label>
+        {d.cfg.tc && lo > 0 && (
+          <label className="slider">Tc {Math.round(mirekToKelvin(d.mode === 'tc' ? act.tc : 250))} K
+            <input type="range" min={lo} max={hi} disabled={!target} value={Math.min(hi, Math.max(lo, act.tc))}
+              onChange={(e) => void send(seqSetTc(target!, Number(e.target.value)))} />
+          </label>
+        )}
+      </div>
+      {err && <div className="warn">⚠ {err}</div>}
+
+      <div className="bars">
+        {(d.mode === 'primary' ? act.primary.slice(0, d.cfg.primaries).map((v) => v / 0xfffe) : act.rgbwaf.slice(0, d.cfg.rgbwaf).map((v) => v / 254))
+          .map((v, i) => (
+            <div key={i} className="bar" title={`${d.mode === 'primary' ? 'Primary ' + i : 'RGBWAF'[i]}: ${(v * 100).toFixed(0)} %`}>
+              <div className="fill" style={{ height: `${v * 100}%`, background: rgbCss(xyToRgb(d.primaryXy[i]?.x ?? 0.33, d.primaryXy[i]?.y ?? 0.33)) }} />
+              <small>{d.mode === 'primary' ? `P${i}` : 'RGBWAF'[i]}</small>
+            </div>
+          ))}
+      </div>
+      <div className="muted">Tc limits {d.coolestMirek ? `${d.coolestMirek}–${d.warmestMirek} mirek (${Math.round(mirekToKelvin(d.warmestMirek))}–${Math.round(mirekToKelvin(d.coolestMirek))} K)` : 'n/a'}</div>
+    </fieldset>
+  );
+}
+
+export function Dt0Panel({ s }: { s: GearState }) {
+  const d = s.dt0!;
+  return (
+    <fieldset>
+      <legend>DT0 lamp</legend>
+      <table className="regs"><tbody>
+        <tr><th>Dimming curve</th><td>{d.dimmingCurve === 1 ? 'linear' : 'standard (logarithmic)'}</td></tr>
+        <tr><th>Current protector</th><td>{d.currentProtector ? 'enabled' : 'disabled'}</td></tr>
+        <tr><th>Fast fade time</th><td>{d.fastFadeTime ? `${d.fastFadeTime * 25} ms` : 'off'} (min {d.minFastFadeTime * 25} ms)</td></tr>
+        <tr><th>Reference power</th><td>{d.referenceUntilUs ? 'measuring…' : d.referencePowerDone ? 'done' : '—'}</td></tr>
+      </tbody></table>
+    </fieldset>
+  );
+}

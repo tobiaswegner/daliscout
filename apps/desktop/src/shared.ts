@@ -19,6 +19,9 @@ export interface DaliApi {
   simCommand(cmd: SimCommand): Promise<SimCommandResult>;
 }
 
+/** What kind of gear to add: plain, DT0 lamp, or a DT8 colour preset. */
+export type GearType = 'plain' | 'dt0' | 'rgb' | 'rgbw' | 'rgb-ct' | 'tc' | 'xy';
+
 export interface SimGearView { id: number; state: GearState }
 
 export interface SimState {
@@ -33,7 +36,7 @@ export interface SimState {
 }
 
 export type SimCommand =
-  | { type: 'add'; count: number; addressed: boolean; deviceTypes?: number[] }
+  | { type: 'add'; count: number; addressed: boolean; gearType?: GearType }
   | { type: 'remove'; id: number }
   | { type: 'clone'; id: number }
   | { type: 'clear' }
@@ -43,7 +46,8 @@ export type SimCommand =
   | { type: 'powerCycle'; id: number }
   | { type: 'speed'; value: number }
   | { type: 'pause'; value: boolean }
-  | { type: 'commission'; all: boolean };
+  | { type: 'commission'; all: boolean }
+  | { type: 'scenario'; name: 'mixed65' };
 
 export type SimCommandResult = { ok: true; message?: string } | { ok: false; error: string };
 
