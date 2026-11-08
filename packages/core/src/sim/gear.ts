@@ -1,5 +1,8 @@
 import { lookupCommand, lookupSpecial } from '../commands.js';
 import { fadeDurationUs, fadeRateStepsPerSecond } from './fade.js';
+import type { ExtContext, GearExtension } from './ext.js';
+import { dt0, createDt0State } from './dt0.js';
+import { dt8, createDt8State } from './dt8.js';
 import { NO_VALUE, YES, type GearConfig, type GearState, type Times } from './types.js';
 
 const TWICE_WINDOW_US = 100_000;
@@ -61,6 +64,9 @@ export function createGearState(id: number, cfg: GearConfig = {}): GearState {
     memory: [bank0(id + 1, version), [0x03, 0x00, 0xff, 0x00]],
     faults: { lampFailure: false, offline: false, noAnswer: false, ...cfg.faults }
   };
+  if (cfg.colour && !s.deviceTypes.includes(8)) s.deviceTypes.push(8);
+  if (s.deviceTypes.includes(8)) s.dt8 = createDt8State(cfg.colour);
+  if (s.deviceTypes.includes(0)) s.dt0 = createDt0State();
   return s;
 }
 
@@ -75,9 +81,11 @@ export class Gear {
   /** Called after every state mutation, so a host can push updates to a UI. */
   onChange?: () => void;
   private pending: { a: number; d: number; busUs: number } | null = null;
+  private readonly exts: GearExtension[];
 
   constructor(readonly id: number, cfg: GearConfig = {}, private readonly rng: Rng = Math.random) {
     this.s = createGearState(id, cfg);
+    this.exts = [dt0, dt8].filter((e) => this.s.deviceTypes.includes(e.deviceType));
   }
 
   snapshot(): GearState {
@@ -125,6 +133,7 @@ export class Gear {
       }
       dirty = true;
     }
+    for (const e of this.exts) if (e.advance?.(simUs, s)) dirty = true;
     if (dirty) this.changed();
     return dirty;
   }
@@ -179,7 +188,7 @@ export class Gear {
 
     const again = !!this.pending && this.pending.a === a && this.pending.d === d &&
       t.busUs - this.pending.busUs <= TWICE_WINDOW_US;
-    if (!again) this.pending = null;
+    if (!again && a !== 0xc1) this.pending = null;   // ENABLE DEVICE TYPE may sit between the two copies
 
     let answer: number | undefined;
     if (a >= 0xa0 && a <= 0xfb) {
@@ -266,7 +275,7 @@ export class Gear {
   private command(a: number, op: number, dt: number | null, again: boolean, t: Times): number | undefined {
     const s = this.s;
 
-    if (op >= 0xe0 && dt !== null) return this.extended(dt, op);
+    if (op >= 0xe0 && dt !== null) return this.extended(dt, op, a, again, t);
 
     const def = lookupCommand(op)?.def;
     if (def?.sendTwice && !this.twice(a, op, again, t)) return undefined;
@@ -300,6 +309,7 @@ export class Gear {
     if (op >= 0x10 && op <= 0x1f) {                                           // GO TO SCENE
       const lvl = s.scenes[op & 0x0f]!;
       if (lvl !== NO_VALUE) this.goTo(lvl, t);
+      this.sceneHook('recall', op & 0x0f, a, op, t);
       return undefined;
     }
 
@@ -322,8 +332,8 @@ export class Gear {
           s.extendedFadeTime = mult > 4 ? 0 : (mult << 4) | (dtr0 & 15);
           config(); break;
         }
-        case op >= 0x40 && op <= 0x4f: s.scenes[op & 0x0f] = dtr0; config(); break;
-        case op >= 0x50 && op <= 0x5f: s.scenes[op & 0x0f] = NO_VALUE; config(); break;
+        case op >= 0x40 && op <= 0x4f: s.scenes[op & 0x0f] = dtr0; this.sceneHook('store', op & 0x0f, a, op, t); config(); break;
+        case op >= 0x50 && op <= 0x5f: s.scenes[op & 0x0f] = NO_VALUE; this.sceneHook('remove', op & 0x0f, a, op, t); config(); break;
         case op >= 0x60 && op <= 0x6f: s.groups |= 1 << (op & 0x0f); config(); break;
         case op >= 0x70 && op <= 0x7f: s.groups &= ~(1 << (op & 0x0f)); config(); break;
         case op === 0x80: // STORE DTR AS SHORT ADDRESS
@@ -376,8 +386,23 @@ export class Gear {
   }
 
   /** Extension point for device-type specific commands (0xE0-0xFF after ENABLE DEVICE TYPE). */
-  protected extended(_deviceType: number, _opcode: number): number | undefined {
-    return undefined;
+  protected extended(deviceType: number, opcode: number, a: number, again: boolean, t: Times): number | undefined {
+    const ext = this.exts.find((e) => e.deviceType === deviceType);
+    if (!ext) return undefined;
+    return ext.command(opcode, this.extContext(opcode, a, again, t));
+  }
+
+  private extContext(op: number, a: number, again: boolean, t: Times): ExtContext {
+    return {
+      s: this.s, t, fadeUs: this.fadeUs(),
+      twice: () => this.twice(a, op, again, t),
+      changed: () => this.changed()
+    };
+  }
+
+  private sceneHook(kind: 'store' | 'remove' | 'recall', n: number, a: number, op: number, t: Times): void {
+    const ctx = this.extContext(op, a, true, t);
+    for (const e of this.exts) e.scene?.(kind, n, ctx);
   }
 
   private reclamp(): void {
@@ -392,6 +417,7 @@ export class Gear {
   private reset(): void {
     const s = this.s;
     applyResetValues(s);
+    for (const e of this.exts) e.reset?.(s);
     s.powerFailure = false;
     this.reclamp();
     this.changed();

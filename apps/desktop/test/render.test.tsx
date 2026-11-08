@@ -22,7 +22,7 @@ function simState(): SimState {
   a!.s.scenes[3] = 120;
   a!.s.actualLevel = 10;
   a!.s.fade = { startLevel: 10, targetLevel: 200, startUs: 0, durationUs: 1e6 };
-  sim.addGear({ deviceTypes: [8] });        // unaddressed DT8
+  sim.addGear({ colour: 'rgb-ct' });        // unaddressed DT8
   return { active: true, gears: sim.snapshot(), maxGears: 65, speed: 1, paused: false };
 }
 
@@ -37,10 +37,29 @@ describe('Simulator view', () => {
     expect(html).toContain('A0'); expect(html).toContain('A3');
     expect(html).toContain('no address');
     expect(html).toContain('DT8');
+    expect(html).toContain('RGB+CT');
     expect(html).toContain('offline');
     expect(html).toContain('G0'); expect(html).toContain('G2');
     expect(html).toContain('Commission unaddressed (1)');
     expect(html).toContain('↗');                       // gear 0 is fading up
+  });
+  it('renders the DT8 colour panel and the DT0 panel for the selected gear', async () => {
+    const sim = new Simulation();
+    sim.addGear({ colour: 'rgb-ct', shortAddress: 0 });
+    sim.addGear({ deviceTypes: [0], shortAddress: 1 });
+    const st: SimState = { active: true, gears: sim.snapshot(), maxGears: 65, speed: 1, paused: false };
+    // selection is internal state; render the detail panels through the exported components
+    const { ColourPanel, Dt0Panel } = await import('../src/renderer/src/Simulator');
+    const colour = renderToString(<ColourPanel g={st.gears[0]!} />);
+    expect(colour).toContain('DT8 RGB+CT');
+    expect(colour).toContain('<svg');                  // CIE diagram
+    expect(colour).toContain('type="range"');           // Tc slider
+    expect(colour).toContain('153–370 mirek');
+    const tc = renderToString(<ColourPanel g={{ id: 9, state: new Simulation().addGear({ colour: 'tc', shortAddress: 2 }).s }} />);
+    expect(tc).not.toContain('<svg');                   // no xy: no diagram
+    expect(renderToString(<Dt0Panel s={st.gears[1]!.state} />)).toContain('standard (logarithmic)');
+    const unaddressed = renderToString(<ColourPanel g={{ id: 8, state: new Simulation().addGear({ colour: 'rgb' }).s }} />);
+    expect(unaddressed).toContain('Commission this gear');
   });
   it('shows a start button while the virtual bus is not running', () => {
     const html = renderToString(<Simulator sim={{ ...simState(), active: false }} run={noop} active={false} canSend={false} recent={[]} />);

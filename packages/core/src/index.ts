@@ -9,3 +9,5 @@ export * from './export.js';
 export * from './stats.js';
 export * from './build.js';
 export * from './sim/index.js';
+export * from './ext-commands.js';
+export * from './build-dt8.js';

@@ -154,6 +154,56 @@ describe('SourceManager simulator', () => {
     await mgr.stop();
   }, 20_000);
 
+  it('adds DT0 and DT8 gear and clones their configuration', async () => {
+    const { mgr, simStates } = setup();
+    await mgr.startVirtual();
+    await mgr.simCommand({ type: 'clear' });
+    await mgr.simCommand({ type: 'add', count: 1, addressed: true, gearType: 'rgbw' });
+    await mgr.simCommand({ type: 'add', count: 1, addressed: true, gearType: 'dt0' });
+    await mgr.simCommand({ type: 'add', count: 1, addressed: true, gearType: 'tc' });
+    await wait(80);
+    const g = simStates().at(-1)!.gears;
+    expect(g.map((x) => x.state.deviceTypes)).toEqual([[8], [0], [8]]);
+    expect(g[0]!.state.dt8!.cfg.primaries).toBe(4);
+    expect(g[1]!.state.dt0).toBeDefined();
+    expect(g[2]!.state.dt8!.cfg.xy).toBe(false);
+    await mgr.simCommand({ type: 'clone', id: g[0]!.id });
+    await wait(80);
+    const clone = simStates().at(-1)!.gears.at(-1)!.state;
+    expect(clone.dt8!.cfg.primaries).toBe(4);
+    expect(clone.shortAddress).toBeNull();
+    await mgr.stop();
+  });
+
+  it('the 65-gear demo: 64 addressed gears plus one unaddressed', async () => {
+    const { mgr, simStates } = setup();
+    await mgr.startVirtual();
+    expect(await mgr.simCommand({ type: 'scenario', name: 'mixed65' })).toMatchObject({ ok: true, message: /65 gears/ });
+    await wait(80);
+    const gs = simStates().at(-1)!.gears;
+    expect(gs).toHaveLength(65);
+    expect(gs.filter((x) => x.state.dt8)).toHaveLength(45);
+    expect(gs.filter((x) => x.state.dt0)).toHaveLength(10);
+    expect(gs.filter((x) => x.state.shortAddress === null)).toHaveLength(1);
+    await mgr.stop();
+  });
+
+  it('a colour sent from the console reaches the DT8 gear and the monitor shows it decoded', async () => {
+    const { mgr, simStates, frames } = setup();
+    await mgr.startVirtual();
+    await mgr.simCommand({ type: 'clear' });
+    await mgr.simCommand({ type: 'add', count: 2, addressed: true, gearType: 'rgb-ct' });
+    for (const hex of ['A3 CB', 'C3 00', 'C1 08', '01 E7', 'C1 08', '01 E2']) {
+      await mgr.send({ hex, sendTwice: false, expectReply: false });
+    }
+    await wait(80);
+    const gs = simStates().at(-1)!.gears;
+    expect(gs[0]!.state.dt8!.actual.tc).toBe(203);
+    expect(gs[1]!.state.dt8!.actual.tc).toBe(250);       // other address untouched
+    expect(frames().some((f) => f.data[1] === 0xe7)).toBe(true);
+    await mgr.stop();
+  });
+
   it('simulator commands need the virtual bus', async () => {
     const { mgr } = setup();
     expect(await mgr.simCommand({ type: 'clear' })).toMatchObject({ ok: false, error: /virtual bus/ });

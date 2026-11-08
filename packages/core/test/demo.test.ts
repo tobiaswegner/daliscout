@@ -21,6 +21,6 @@ describe('examples/demo.dscap', () => {
   });
 
   it('resolves DT8 extended commands', () => {
-    expect(rows.some((r) => r.decoded.command === 'DT8 EXTENDED COMMAND')).toBe(true);
+    expect(rows.some((r) => r.decoded.command.startsWith('DT8 '))).toBe(true);
   });
 });

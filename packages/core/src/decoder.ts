@@ -2,6 +2,7 @@ import type { BusFrame } from './frame.js';
 import { toHex } from './frame.js';
 import { lookupCommand, lookupSpecial, type AnswerKind, type CommandDef } from './commands.js';
 import { formatLevel, MASK } from './level.js';
+import { describeExtParams, formatColourFeatures, formatColourStatus, lookupExtended } from './ext-commands.js';
 
 export type DecodedClass =
   | 'arc' | 'config' | 'query' | 'special' | 'extended'
@@ -35,7 +36,7 @@ export interface Decoded {
 
 interface Pending {
   seq: number;
-  def: CommandDef;
+  def: { name: string };
   kind: AnswerKind;
 }
 
@@ -128,6 +129,8 @@ export class Decoder {
         for (let i = 0; i < 8; i++) if (b & (1 << i)) groups.push(i);
         return `${hexByte(b)} (bits ${groups.join(',') || 'none'})`;
       }
+      case 'colour-status': return formatColourStatus(b);
+      case 'colour-features': return formatColourFeatures(b);
       case 'status': {
         const set = STATUS_BITS.filter((_, i) => b & (1 << i));
         return `${hexByte(b)} (${set.join(', ') || 'all clear'})`;
@@ -175,9 +178,19 @@ export class Decoder {
   private decodeCommand(target: string, op: number, seq: number, enableDT?: number): Decoded {
     if (op >= 0xe0 && enableDT !== undefined) {
       const dt = DEVICE_TYPES[enableDT]?.split(' ')[0] ?? `DT${enableDT}`;
+      const ext = lookupExtended(enableDT, op);
+      if (!ext) {
+        return base({
+          layer: '102', class: 'extended', target, command: `${dt} EXTENDED COMMAND`,
+          params: [hexByte(op)], summary: `${target} · ${dt} extended command ${hexByte(op)}`
+        });
+      }
+      const params = describeExtParams(ext, { dtr0: this.dtr0, dtr1: this.dtr1, dtr2: this.dtr2 });
+      if (ext.answer) this.pending = { seq, def: ext, kind: ext.answer };
       return base({
-        layer: '102', class: 'extended', target, command: `${dt} EXTENDED COMMAND`,
-        params: [hexByte(op)], summary: `${target} · ${dt} extended command ${hexByte(op)}`
+        layer: '102', class: ext.answer ? 'query' : 'extended', target, command: `${dt} ${ext.name}`, params,
+        expectsAnswer: !!ext.answer, sendTwice: !!ext.sendTwice,
+        summary: `${target} · ${dt} ${ext.name}${params.length ? ' (' + params.join(', ') + ')' : ''}`
       });
     }
     const hit = lookupCommand(op);

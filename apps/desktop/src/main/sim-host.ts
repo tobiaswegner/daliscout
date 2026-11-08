@@ -87,7 +87,8 @@ export class SimHost {
       case 'add': {
         const n = Math.max(1, Math.min(65, Math.floor(cmd.count)));
         if (sim.gears.length + n > sim.maxGears) throw new Error(`At most ${sim.maxGears} gears fit (have ${sim.gears.length})`);
-        const cfg: GearConfig = { deviceTypes: cmd.deviceTypes };
+        const gt = cmd.gearType ?? 'plain';
+        const cfg: GearConfig = gt === 'plain' ? {} : gt === 'dt0' ? { deviceTypes: [0] } : { colour: gt };
         if (cmd.addressed) {
           // lowest free short addresses; the rest stay unaddressed
           const used = new Set(sim.gears.map((g) => g.s.shortAddress));
@@ -103,13 +104,24 @@ export class SimHost {
       case 'remove': if (!sim.removeGear(cmd.id)) throw new Error(`No gear with id ${cmd.id}`); return undefined;
       case 'clone': {
         const src = gear(cmd.id).s;
-        const g = sim.addGear({ name: `${src.name} copy`, physicalMin: src.physicalMin, deviceTypes: src.deviceTypes, version: src.version });
+        const g = sim.addGear({ name: `${src.name} copy`, physicalMin: src.physicalMin, deviceTypes: src.deviceTypes, version: src.version, colour: src.dt8?.cfg });
         // an independent unaddressed copy of the configuration (a duplicate short address would clash on a real bus)
         const keep = createGearState(g.id, { name: g.s.name });
         Object.assign(g.s, structuredClone({ ...src, name: keep.name, shortAddress: null, memory: keep.memory }));
         return undefined;
       }
       case 'clear': sim.clear(); return undefined;
+      case 'scenario': {
+        // 65 mixed gear: 64 addressed, the 65th stays unaddressed
+        sim.clear();
+        const mix: [number, GearConfig][] = [
+          [20, { colour: 'rgb-ct' }], [10, { colour: 'rgbw' }], [10, { colour: 'rgb' }], [5, { colour: 'tc' }],
+          [10, { deviceTypes: [0] }], [10, {}]
+        ];
+        let n = 0;
+        for (const [count, cfg] of mix) for (let i = 0; i < count; i++, n++) sim.addGear({ ...cfg, shortAddress: n < 64 ? n : null });
+        return 'Added 65 gears: 20 RGB+CT, 10 RGBW, 10 RGB, 5 CT, 10 DT0, 10 plain';
+      }
       case 'rename': gear(cmd.id).s.name = cmd.name.slice(0, 40); gear(cmd.id).onChange?.(); return undefined;
       case 'setLevel': gear(cmd.id).forceLevel(cmd.level); return undefined;
       case 'fault': gear(cmd.id).setFault(cmd.patch); return undefined;

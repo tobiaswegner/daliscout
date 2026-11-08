@@ -1,7 +1,8 @@
 import table from '../data/commands-102.json';
 
 export type AnswerKind =
-  | 'yes-no' | 'byte' | 'level' | 'status' | 'device-type' | 'fade' | 'bitmask' | 'short-address';
+  | 'yes-no' | 'byte' | 'level' | 'status' | 'device-type' | 'fade' | 'bitmask' | 'short-address'
+  | 'colour-status' | 'colour-features';
 
 export interface CommandDef {
   code: number;
