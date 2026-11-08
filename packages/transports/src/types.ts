@@ -14,6 +14,8 @@ export interface TxFrame {
   bits?: number;
   /** Send the frame twice (DALI configuration commands). */
   sendTwice?: boolean;
+  /** The frame is a query: ask the interface to wait for a backward frame. */
+  expectReply?: boolean;
 }
 
 export type TransportStatus = 'closed' | 'opening' | 'open' | 'error';
@@ -32,3 +34,15 @@ export interface DaliTransport {
   onFrame(cb: (f: BusFrame) => void): () => void;
   onStatus(cb: (s: TransportStatus, error?: Error) => void): () => void;
 }
+
+/** Byte/packet pipe to a physical device (serial port, HID). Supplied by the host app. */
+export interface DeviceStream {
+  write(data: Uint8Array): Promise<void>;
+  onData(cb: (data: Uint8Array) => void): () => void;
+  /** Called when the device disappears or errors out. */
+  onClose(cb: (err?: Error) => void): () => void;
+  close(): Promise<void>;
+}
+
+/** Opens the underlying device; called by the transport's open(). */
+export type StreamFactory = () => Promise<DeviceStream>;

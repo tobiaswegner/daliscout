@@ -12,7 +12,7 @@ The repo is greenfield (LICENSE + `.devcontainer` with Node/npm/Python on Debian
 **Assumptions to confirm (flagged, not blockers):**
 - *"65 gears"*: a DALI bus has 64 short addresses (0–63). Spec allows up to **65 simulated gears** (configurable cap), shows a warning above 64 addressed gears, and lets the 65th stay unaddressed.
 - *DT0 is fluorescent-lamp gear* (IEC 62386-201), not colour. It is simulated as a dimmable lamp with lamp-failure/power state. Colour (RGB/RGBW/RGB+CT/xy/Tc) is **DT8** (IEC 62386-209).
-- *Live-bus simulation* requires an interface that can **transmit backward frames** (answers). Unknown for the Lunatone USB; handled via a transport capability flag (`canReply`). If unsupported, the live simulator still receives and updates state but cannot answer queries.
+- *Live-bus simulation* requires an interface that can **transmit backward frames** (answers), flagged by `canReply`. **Findings (milestone 2 research):** the Lunatone DALI-2 USB speaks LUBA, which has *no* send-backward-frame command, only **4 fixed auto-answers** (frame → answer byte, `CONFIG AUTO ANSWER`), so it cannot emulate gears in general (`canReply = false`). The legacy DALI USB has an unused `SEND_ANSWER` (0x15) command code in the python-dali driver; whether it works is an open hardware experiment. Until proven, live-bus simulation needs other hardware or stays limited to receiving + updating state.
 - Command tables in this spec are written from memory of IEC 62386-102/-103/-201/-209. **They must be verified against the standards** before being frozen; they live in data files (see §5) so corrections are cheap.
 
 ---
@@ -39,7 +39,9 @@ interface DaliTransport {
 type BusFrame = { ts: number /*µs, monotonic; number so it survives IPC/JSON*/; dir: 'rx'|'tx'; kind: 'forward'|'backward'|'error';
                   bits: number; data: Uint8Array; error?: 'framing'|'collision'|'short'|'long'; source: string };
 ```
-- **Lunatone/Tridonic DALI USB (HID)**: enumerate via `node-hid`; implement HID report encode/decode, sequence numbers, sniff mode, frame send/receive. *Protocol details to be sourced from vendor docs / captured traffic — Milestone 2 starts with a spike to confirm sniffing of all frames incl. other masters and backward frames.*
+- **Lunatone DALI-2 USB, art. 24138215-30 — LUBA over USB serial** (`luba/`): documented in *LUBA Protocol V1.10* (38400 8N1; message `'Y' CMD LEN DATA XOR`). Implemented: streaming parser with resync, `QUERY DEVICE DESCRIPTOR`, read/modify/write `SETTINGS` (only `EventFilter` is changed, to enable all events with tick + line), `ADD 16/24-BIT/ANY FRAME TO TX BUFFER` (send-twice, wait-for-response, priority 1–5), `CONFIG AUTO ANSWER`, and the full **event** stream (frames sent/received, answers, collisions, bus faults). Timestamps come from the device's 16-bit tick (`Tick_us` from the descriptor), unwrapped against the host clock. `canReply = false`. Assumed, to verify on hardware: received/sent frame bytes in events are big-endian and right-aligned in the 4-byte field.
+- **Legacy Tridonic/Lunatone DALI USB, art. 24138923 — HID 17b5:0020** (`hid/`): **no vendor documentation.** The 64-byte report layout comes from the open-source python-dali driver (`hid.py`) and is **unverified on hardware**; a second driver in that project names header fields differently. Implemented: init, send (16/24-bit, send-twice flag, sequence numbers 1–255), observed-traffic and response reports, status reports. No device timestamps (host clock; USB jitter of a few ms). `canReply = false`. **Verified on a real device (24138923, firmware 2.2):** HID 64-byte unnumbered reports, init exchange (firmware at bytes 3–4, serial at bytes 1–4 of the replies). **Still unverified:** sniffing of other masters, send/echo/answer reports. Validate with `node scripts/hid-probe.mjs` (dumps raw reports; `--send "FF 90"` transmits a frame). Linux needs `docs/udev/70-dali-usb.rules` and `libusb-1.0`.
+- Device access lives in the app (`apps/desktop/src/main/devices.ts`: `node-hid`, `serialport`, loaded lazily); transports only see a `DeviceStream`, so they are fully testable with fakes.
 - **DALI-over-IP (Part 104)**: implementation blocked on user-supplied spec + example code. Until then ship the interface + a stub with a loopback test server. Settings: host/port, protocol, reconnect with backoff.
 - **Virtual bus**: in-process bus connecting simulated gears and the built-in console; models timing (backward frame 2.9–9.17 ms after forward frame, collision when several gears answer).
 - **Replay**: plays back a capture file at 1×/N× speed (also used for tests and demos).
@@ -96,7 +98,7 @@ Sustain ≥ 1 000 frames/s without UI drops (theoretical bus max ≈ 50/s, so te
 
 ## 8. Milestones
 1. **Foundations**: monorepo, CI (lint, typecheck, vitest), `core` frame model + 102 decoder + tables, replay & virtual transports, minimal Electron shell with monitor table.
-2. **Real hardware (USB)**: HID spike → Lunatone/Tridonic transport, live capture, send panel, capture save/load, search & filters, stateful decoding, statistics.
+2. **Real hardware (USB)** — *software complete, hardware validation pending*: LUBA transport (DALI-2 USB) and legacy HID transport (DALI USB 24138923), device discovery and source selection, send panel, virtual-bus console source, structured filters + presets, CSV/text/.dscap export, statistics (frame rate, bus load, per-address counts). **Deferred:** highlight rules, bookmarks/annotations, find-next/prev, "conversation" shortcut in the UI (the address filter already follows queries and their answers). **Pending hardware:** confirm the HID report layout and sniffing completeness with `scripts/hid-probe.mjs`; test LUBA with a DALI-2 USB.
 3. **Simulator core**: DT-less 102 gear state machine, fading, scenes, groups, send-twice, commissioning; virtual bus + console; gear grid UI.
 4. **DT8 + DT0**: colour registers, queries, colour fade, visualisation (swatch, xy diagram, Tc, RGBW bars), fault injection; 65-gear stress scenario.
 5. **Live-bus simulation**: attach gears to real transport, reply timing, `canReply` handling; end-to-end test with a real controller.
@@ -112,5 +114,5 @@ Sustain ≥ 1 000 frames/s without UI drops (theoretical bus max ≈ 50/s, so te
 
 ## 10. Open items for the user
 - Part 104 spec + example code (needed for Milestone 6).
-- Lunatone/Tridonic DALI USB protocol documentation (or permission to reverse-engineer from captures) and ideally a sample interface for testing.
+- Output of `node scripts/hid-probe.mjs` (idle, with `--send "FF 90"`, and while another master talks) from the 24138923 to validate the HID layout; a DALI-2 USB (24138215-30) would allow testing the LUBA transport.
 - Confirm the 65-gear / DT0 interpretation above.

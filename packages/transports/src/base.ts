@@ -35,3 +35,9 @@ export abstract class TransportBase implements DaliTransport {
     for (const cb of this.statusListeners) cb(s, err);
   }
 }
+
+/** Monotonic host clock in microseconds, starting near 0. */
+export function createHostClock(): () => number {
+  const t0 = performance.now();
+  return () => Math.round((performance.now() - t0) * 1000);
+}

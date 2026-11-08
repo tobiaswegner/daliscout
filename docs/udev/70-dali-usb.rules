@@ -1,0 +1,11 @@
+# DALI Scout: access for Lunatone / Tridonic USB DALI interfaces without root.
+# Install:  sudo cp docs/udev/70-dali-usb.rules /etc/udev/rules.d/
+#           sudo udevadm control --reload && sudo udevadm trigger
+# then unplug and replug the interface. "uaccess" grants the currently logged-in user.
+
+# DALI USB, art. 24138923 (HID, VID 17b5 PID 0020)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="17b5", ATTRS{idProduct}=="0020", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="17b5", ATTRS{idProduct}=="0020", MODE="0660", TAG+="uaccess"
+
+# DALI-2 USB, art. 24138215-30 (LUBA over USB serial)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="17b5", MODE="0660", TAG+="uaccess"

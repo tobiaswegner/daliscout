@@ -16,7 +16,11 @@ const api: DaliApi = {
   openCapture: () => ipcRenderer.invoke(CH.openCapture),
   startDemo: () => ipcRenderer.invoke(CH.startDemo),
   stop: () => ipcRenderer.invoke(CH.stop),
-  setReplaySpeed: (s) => ipcRenderer.invoke(CH.speed, s)
+  setReplaySpeed: (s) => ipcRenderer.invoke(CH.speed, s),
+  listDevices: () => ipcRenderer.invoke(CH.devices),
+  connect: (t) => ipcRenderer.invoke(CH.connect, t),
+  send: (r) => ipcRenderer.invoke(CH.send, r),
+  saveFile: (r) => ipcRenderer.invoke(CH.saveFile, r)
 };
 
 contextBridge.exposeInMainWorld('dali', api);

@@ -20,6 +20,8 @@ export class CaptureSession {
   private nextSeq = 0;
   private decoder = new Decoder();
   private lastTs?: number;
+  /** Queries that were followed by another frame without a reply. */
+  unanswered = 0;
 
   constructor(private readonly maxRows = 1_000_000) {}
 
@@ -42,13 +44,14 @@ export class CaptureSession {
     if (frame.kind !== 'backward') {
       // a non-reply frame closes every still-open query window
       const prev = this.rows[this.rows.length - 1];
-      if (prev && prev.answerStatus === 'pending') prev.answerStatus = 'none';
+      if (prev && prev.answerStatus === 'pending') { prev.answerStatus = 'none'; this.unanswered++; }
     } else if (decoded.answerTo !== undefined) {
       const q = this.bySeq(decoded.answerTo);
       if (q) {
         q.answerStatus = 'answered';
         q.answerSeq = seq;
         q.decoded.answer = decoded.summary.replace(/^→ /, '');
+        decoded.addr = q.decoded.addr; // lets address filters follow a whole conversation
       }
     }
 
@@ -66,5 +69,6 @@ export class CaptureSession {
     this.base = this.nextSeq;
     this.decoder.reset();
     this.lastTs = undefined;
+    this.unanswered = 0;
   }
 }
