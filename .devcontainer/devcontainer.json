@@ -1,0 +1,31 @@
+{
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "TZ": "${localEnv:TZ:Europe/Berlin}",
+      "WS": "${localWorkspaceFolderBasename}"
+    }
+  },
+  "runArgs": ["--network=host"],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "eamodio.gitlens"
+      ],
+      "settings": {
+      }
+    }
+  },
+  "remoteUser": "vscode",
+  "mounts": [
+    "source=claude-code-bashhistory,target=/commandhistory,type=volume",
+    "source=claude-code-config,target=/home/vscode/.claude,type=volume",
+    "source=gh-config,target=/home/vscode/.config/gh,type=volume"
+  ],
+  "remoteEnv": {
+    "NODE_OPTIONS": "--max-old-space-size=4096",
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/${localWorkspaceFolderBasename},type=bind,consistency=delegated",
+  "workspaceFolder": "/${localWorkspaceFolderBasename}"
+}
