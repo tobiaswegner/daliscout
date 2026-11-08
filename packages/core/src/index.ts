@@ -8,3 +8,4 @@ export * from './filter.js';
 export * from './export.js';
 export * from './stats.js';
 export * from './build.js';
+export * from './sim/index.js';

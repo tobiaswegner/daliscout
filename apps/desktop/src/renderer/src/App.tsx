@@ -6,13 +6,18 @@ import { SendPanel } from './SendPanel';
 import { SourceBar } from './SourceBar';
 import { StatsPanel } from './StatsPanel';
 import { exportRows, type ExportFormat } from './exporters';
+import { Simulator } from './Simulator';
+import { useSim } from './useSim';
 
 const ROW_H = 22;
 const OVERSCAN = 20;
 type Panel = 'filter' | 'send' | 'stats' | null;
+type View = 'monitor' | 'simulator';
 
 export function App() {
   const m = useMonitor();
+  const { state: simState, run: runSim } = useSim();
+  const [tab, setTab] = useState<View>('monitor');
   const [follow, setFollow] = useState(true);
   const [panel, setPanel] = useState<Panel>(null);
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
@@ -65,6 +70,11 @@ export function App() {
     <div className="app">
       <header className="toolbar">
         <strong className="brand">DALI Scout</strong>
+        <span className="tabs">
+          <button className={tab === 'monitor' ? 'on' : ''} onClick={() => setTab('monitor')}>Monitor</button>
+          <button className={tab === 'simulator' ? 'on' : ''} onClick={() => setTab('simulator')}>Simulator</button>
+        </span>
+        <span className="sep" />
         <SourceBar running={running} />
         <span className="sep" />
         <button onClick={() => window.dali.openCapture()}>Open capture…</button>
@@ -80,47 +90,55 @@ export function App() {
         )}
       </header>
 
-      <div className="toolbar second">
-        <button className={panel === 'filter' ? 'on' : ''} onClick={() => toggle('filter')}>
-          Filter{m.filterActive ? ' ●' : ''}
-        </button>
-        <button className={panel === 'send' ? 'on' : ''} onClick={() => toggle('send')}>Send</button>
-        <button className={panel === 'stats' ? 'on' : ''} onClick={() => toggle('stats')}>Statistics</button>
-        <span className="sep" />
-        <button onClick={m.togglePause}>{m.paused ? `Resume (${m.heldCount})` : 'Pause'}</button>
-        <button onClick={m.clear}>Clear</button>
-        <label><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> Follow</label>
-        <span className="grow" />
-        <label title="Export only the rows that match the current filter">
-          <input type="checkbox" checked={filteredExport} disabled={!m.filterActive}
-            onChange={(e) => setFilteredExport(e.target.checked)} /> filtered rows only
-        </label>
-        <span>Export:</span>
-        <button onClick={() => doExport('csv')} disabled={m.total === 0}>CSV</button>
-        <button onClick={() => doExport('txt')} disabled={m.total === 0}>Text</button>
-        <button onClick={() => doExport('dscap')} disabled={m.total === 0}>.dscap</button>
-      </div>
-
-      {panel === 'filter' && <FilterPanel filter={m.filter} onChange={m.setFilter} error={m.filterError} />}
-      {panel === 'send' && <SendPanel canSend={!!m.source.canSend && running} />}
-      {panel === 'stats' && <StatsPanel stats={m.stats()} />}
-
-      <div className="thead row">
-        <span className="c-seq">#</span><span className="c-time">Time [s]</span><span className="c-delta">Δ [ms]</span>
-        <span className="c-dir">Dir</span><span className="c-hex">Raw</span><span className="c-target">Target</span>
-        <span className="c-cmd">Command</span><span className="c-params">Parameters</span><span className="c-answer">Answer</span>
-      </div>
-
-      <div className="table" ref={scroller} onScroll={onScroll}>
-        <div style={{ height: m.count * ROW_H, position: 'relative' }}>
-          {rows.map(({ r, i }) => (
-            <TelegramRow key={r.seq} r={r} top={i * ROW_H} t0={m.firstTs}
-              selected={r.seq === selectedSeq} onSelect={() => setSelectedSeq(r.seq)} />
-          ))}
+      <div className="pane" style={{ display: tab === 'monitor' ? 'flex' : 'none' }}>
+        <div className="toolbar second">
+          <button className={panel === 'filter' ? 'on' : ''} onClick={() => toggle('filter')}>
+            Filter{m.filterActive ? ' ●' : ''}
+          </button>
+          <button className={panel === 'send' ? 'on' : ''} onClick={() => toggle('send')}>Send</button>
+          <button className={panel === 'stats' ? 'on' : ''} onClick={() => toggle('stats')}>Statistics</button>
+          <span className="sep" />
+          <button onClick={m.togglePause}>{m.paused ? `Resume (${m.heldCount})` : 'Pause'}</button>
+          <button onClick={m.clear}>Clear</button>
+          <label><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> Follow</label>
+          <span className="grow" />
+          <label title="Export only the rows that match the current filter">
+            <input type="checkbox" checked={filteredExport} disabled={!m.filterActive}
+              onChange={(e) => setFilteredExport(e.target.checked)} /> filtered rows only
+          </label>
+          <span>Export:</span>
+          <button onClick={() => doExport('csv')} disabled={m.total === 0}>CSV</button>
+          <button onClick={() => doExport('txt')} disabled={m.total === 0}>Text</button>
+          <button onClick={() => doExport('dscap')} disabled={m.total === 0}>.dscap</button>
         </div>
+
+        {panel === 'filter' && <FilterPanel filter={m.filter} onChange={m.setFilter} error={m.filterError} />}
+        {panel === 'send' && <SendPanel canSend={!!m.source.canSend && running} />}
+        {panel === 'stats' && <StatsPanel stats={m.stats()} />}
+
+        <div className="thead row">
+          <span className="c-seq">#</span><span className="c-time">Time [s]</span><span className="c-delta">Δ [ms]</span>
+          <span className="c-dir">Dir</span><span className="c-hex">Raw</span><span className="c-target">Target</span>
+          <span className="c-cmd">Command</span><span className="c-params">Parameters</span><span className="c-answer">Answer</span>
+        </div>
+
+        <div className="table" ref={scroller} onScroll={onScroll}>
+          <div style={{ height: m.count * ROW_H, position: 'relative' }}>
+            {rows.map(({ r, i }) => (
+              <TelegramRow key={r.seq} r={r} top={i * ROW_H} t0={m.firstTs}
+                selected={r.seq === selectedSeq} onSelect={() => setSelectedSeq(r.seq)} />
+            ))}
+          </div>
+        </div>
+
+        {selected && <Detail r={selected} bySeq={m.bySeq} onJump={setSelectedSeq} />}
+
       </div>
 
-      {selected && <Detail r={selected} bySeq={m.bySeq} onJump={setSelectedSeq} />}
+      {tab === 'simulator' && (
+        <Simulator sim={simState} run={runSim} active={running && m.source.kind === 'virtual'}
+          canSend={!!m.source.canSend && running} recent={m.recent(10)} />
+      )}
 
       <footer className="status">
         <span className={`dot ${m.source.state}`} />

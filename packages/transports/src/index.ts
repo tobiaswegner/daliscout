@@ -6,3 +6,4 @@ export * from './luba/codec.js';
 export * from './luba/transport.js';
 export * from './hid/legacy-codec.js';
 export * from './hid/legacy-transport.js';
+export * from './sim-attach.js';

@@ -1,13 +1,15 @@
 import type { BrowserWindow } from 'electron';
 import { parseHexInput, type BusFrame } from '@dali-scout/core';
-import { ReplayTransport, VirtualBus, type DaliTransport } from '@dali-scout/transports';
-import { CH, type SendRequest, type SendResult, type SourceInfo, type SourceKind } from '../shared';
+import { ReplayTransport, type DaliTransport } from '@dali-scout/transports';
+import { CH, type SendRequest, type SendResult, type SimCommand, type SimCommandResult, type SourceInfo, type SourceKind } from '../shared';
+import { SimHost } from './sim-host';
 
 /** Owns the single active frame source and forwards its frames to the renderer in batches. */
 export class SourceManager {
   private current: DaliTransport | null = null;
   private currentKind: SourceKind | null = null;
   private replay: ReplayTransport | null = null;
+  private sim: SimHost | null = null;
   private replaySpeed = 1;
   private unsub: (() => void)[] = [];
   private pending: BusFrame[] = [];
@@ -38,7 +40,10 @@ export class SourceManager {
     this.current = null;
     this.currentKind = null;
     this.replay = null;
+    const sim = this.sim;
+    this.sim = null;
     if (t) await t.close();
+    sim?.dispose();
   }
 
   async stopAndReport(): Promise<void> {
@@ -47,8 +52,9 @@ export class SourceManager {
   }
 
   /** Attach `t`, open it and report the state. Failures are reported to the UI, not thrown. */
-  async attach(t: DaliTransport, label: string, kind: SourceKind): Promise<void> {
+  async attach(t: DaliTransport, label: string, kind: SourceKind, sim?: SimHost): Promise<void> {
     await this.stop();
+    this.sim = sim ?? null;
     this.current = t;
     this.currentKind = kind;
     this.unsub.push(t.onFrame((f) => this.queue(f)));
@@ -74,9 +80,17 @@ export class SourceManager {
     this.replay = r;
   }
 
+  /** Virtual bus with simulated gears and a controller console. */
   async startVirtual(): Promise<void> {
-    const bus = new VirtualBus();
-    await this.attach(bus.createEndpoint('console'), 'Virtual bus', 'virtual');
+    await this.stop();
+    const host = new SimHost((s) => this.getWindow()?.webContents.send(CH.simState, s));
+    await host.start();
+    await this.attach(host.console_, 'Virtual bus', 'virtual', host);
+  }
+
+  async simCommand(cmd: SimCommand): Promise<SimCommandResult> {
+    if (!this.sim) return { ok: false, error: 'The simulator runs on the virtual bus. Start it first.' };
+    return this.sim.command(cmd);
   }
 
   setReplaySpeed(speed: number): void {

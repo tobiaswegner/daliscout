@@ -99,7 +99,7 @@ Sustain ≥ 1 000 frames/s without UI drops (theoretical bus max ≈ 50/s, so te
 ## 8. Milestones
 1. **Foundations**: monorepo, CI (lint, typecheck, vitest), `core` frame model + 102 decoder + tables, replay & virtual transports, minimal Electron shell with monitor table.
 2. **Real hardware (USB)** — *software complete, hardware validation pending*: LUBA transport (DALI-2 USB) and legacy HID transport (DALI USB 24138923), device discovery and source selection, send panel, virtual-bus console source, structured filters + presets, CSV/text/.dscap export, statistics (frame rate, bus load, per-address counts). **Deferred:** highlight rules, bookmarks/annotations, find-next/prev, "conversation" shortcut in the UI (the address filter already follows queries and their answers). **Pending hardware:** confirm the HID report layout and sniffing completeness with `scripts/hid-probe.mjs`; test LUBA with a DALI-2 USB.
-3. **Simulator core**: DT-less 102 gear state machine, fading, scenes, groups, send-twice, commissioning; virtual bus + console; gear grid UI.
+3. **Simulator core** — *implemented*: IEC 62386-102 gear state machine (`packages/core/src/sim/`), fading, scenes, groups, send-twice, commissioning, DTR/memory banks, fault injection; ordered virtual bus with optional wire-accurate timing; simulation clock (speed/pause); Simulator tab (tile grid, detail panel, broadcast quick actions, console, commission buttons). See "Simulator implementation notes" below.
 4. **DT8 + DT0**: colour registers, queries, colour fade, visualisation (swatch, xy diagram, Tc, RGBW bars), fault injection; 65-gear stress scenario.
 5. **Live-bus simulation**: attach gears to real transport, reply timing, `canReply` handling; end-to-end test with a real controller.
 6. **DALI-over-IP (Part 104)**: implement from user-supplied spec/example code; loopback test server; reconnect handling.
@@ -116,3 +116,19 @@ Sustain ≥ 1 000 frames/s without UI drops (theoretical bus max ≈ 50/s, so te
 - Part 104 spec + example code (needed for Milestone 6).
 - Output of `node scripts/hid-probe.mjs` (idle, with `--send "FF 90"`, and while another master talks) from the 24138923 to validate the HID layout; a DALI-2 USB (24138215-30) would allow testing the LUBA transport.
 - Confirm the 65-gear / DT0 interpretation above.
+
+## 11. Simulator implementation notes (milestone 3)
+**Structure.** `Gear` (state machine, `process(frame, {busUs, simUs})`, `advance(simUs)`) · `Simulation` (set of gears, answer aggregation, change tracking, max 65) · `SimClock` (host clock × speed, pausable) · `commissionBus` (controller-side binary search, also used by the "Commission" buttons) · `attachSimulation` in `packages/transports` (feeds a transport's frames to the gears, sends answers back when `caps.canReply`) · `SimHost` in the app's main process (owns bus, gears, 50 ms tick, publishes snapshots to the UI).
+**Two clocks.** The send-twice window (100 ms) uses *bus* time; fades and the 15-minute initialisation timer use *simulation* time, so slowing the simulation down does not break send-twice.
+**Answers.** Identical answers from several gears form one valid backward frame; differing answers produce a `collision` error frame. Reply delay is a fixed 6 ms (spec range 2.9–9.17 ms), not random.
+**Virtual bus.** Frames are queued so a reply never overtakes its query. With `wireTiming` frames occupy the bus for their real duration (forward 15.8 ms, backward 9.2 ms) with a 9.17 ms guard, so scripted sequences like commissioning show realistic timestamps and bus load.
+**Not yet simulated / simplified** (candidates for later milestones): device types (hook exists: `Gear.extended`; DT0/DT8 are milestone 4), DALI-2 input devices (24-bit frames are ignored by gears), `PHYSICAL SELECTION` (no button to press), manufacturer-specific mode, persistence of simulator scenarios to disk, random reply delay, live-bus mode (milestone 5).
+**Behaviour taken from memory of IEC 62386-102 — verify against the standard:**
+- DAPC to 0 fades with the fade time; `OFF` and `RECALL MIN/MAX`, `STEP *`, `ON AND STEP UP` are immediate.
+- Fading is linear in level steps; fading up from off starts at the minimum level, fading down to off passes the minimum level and switches off at the end.
+- `UP`/`DOWN`: 200 ms at the fade rate, only when the lamp is on.
+- Reset values: power-on 254, system failure level MASK, fade time 0, fade rate 7, scenes MASK, groups 0, random address 0xFFFFFF; `RESET` keeps the short address and the actual level.
+- Version number answer 8 (DALI-2); `QUERY DEVICE TYPE`: 255 for none, the type for one, 254 for several (then `QUERY NEXT DEVICE TYPE`); `QUERY LIGHT SOURCE TYPE`: 255.
+- Memory bank 0 layout (27 bytes, last location 0x1A) and a minimal writable bank 1; `READ MEMORY LOCATION` auto-increments DTR0.
+- "Reset state" is cleared by configuration commands, not by arc power commands; "power failure" is cleared by arc power commands and `RESET`.
+- Extended fade time: bits 6–4 multiplier (100 ms, 1 s, 10 s, 1 min), bits 3–0 base + 1; overrides the basic fade time when non-zero.

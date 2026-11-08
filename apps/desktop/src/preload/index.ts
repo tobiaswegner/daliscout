@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { BusFrame } from '@dali-scout/core';
-import { CH, type DaliApi, type SourceInfo } from '../shared';
+import { CH, type DaliApi, type SimState, type SourceInfo } from '../shared';
 
 const api: DaliApi = {
   onFrames(cb) {
@@ -20,7 +20,13 @@ const api: DaliApi = {
   listDevices: () => ipcRenderer.invoke(CH.devices),
   connect: (t) => ipcRenderer.invoke(CH.connect, t),
   send: (r) => ipcRenderer.invoke(CH.send, r),
-  saveFile: (r) => ipcRenderer.invoke(CH.saveFile, r)
+  saveFile: (r) => ipcRenderer.invoke(CH.saveFile, r),
+  onSimState(cb) {
+    const h = (_: unknown, s: SimState) => cb(s);
+    ipcRenderer.on(CH.simState, h);
+    return () => ipcRenderer.off(CH.simState, h);
+  },
+  simCommand: (c) => ipcRenderer.invoke(CH.simCommand, c)
 };
 
 contextBridge.exposeInMainWorld('dali', api);

@@ -88,6 +88,7 @@ export function useMonitor() {
     firstTs: t0.current ?? 0,
     source, filter, setFilter: setFilterState, filterActive: active, filterError: compiled.current.error,
     paused, togglePause, heldCount: held.current.length, clear,
+    recent: (n: number): Row[] => s.all().slice(-n),
     stats: () => stats.current.snapshot(s.unanswered),
     exportRows
   };

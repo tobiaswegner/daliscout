@@ -1,4 +1,4 @@
-import type { BusFrame } from '@dali-scout/core';
+import type { BusFrame, GearFaults, GearState } from '@dali-scout/core';
 
 /** IPC contract between main and renderer. */
 export interface DaliApi {
@@ -14,7 +14,38 @@ export interface DaliApi {
   connect(target: ConnectTarget): Promise<void>;
   send(req: SendRequest): Promise<SendResult>;
   saveFile(req: SaveRequest): Promise<{ saved: boolean; path?: string }>;
+  /** Subscribe to simulator snapshots (pushed when something changed, at most ~20 per second). */
+  onSimState(cb: (s: SimState) => void): () => void;
+  simCommand(cmd: SimCommand): Promise<SimCommandResult>;
 }
+
+export interface SimGearView { id: number; state: GearState }
+
+export interface SimState {
+  /** False while no virtual bus is running. */
+  active: boolean;
+  gears: SimGearView[];
+  maxGears: number;
+  speed: number;
+  paused: boolean;
+  /** Set while a long operation such as commissioning runs. */
+  busy?: string;
+}
+
+export type SimCommand =
+  | { type: 'add'; count: number; addressed: boolean; deviceTypes?: number[] }
+  | { type: 'remove'; id: number }
+  | { type: 'clone'; id: number }
+  | { type: 'clear' }
+  | { type: 'rename'; id: number; name: string }
+  | { type: 'setLevel'; id: number; level: number }
+  | { type: 'fault'; id: number; patch: Partial<GearFaults> }
+  | { type: 'powerCycle'; id: number }
+  | { type: 'speed'; value: number }
+  | { type: 'pause'; value: boolean }
+  | { type: 'commission'; all: boolean };
+
+export type SimCommandResult = { ok: true; message?: string } | { ok: false; error: string };
 
 export type SourceKind = 'replay' | 'virtual' | 'device';
 
@@ -64,5 +95,7 @@ export const CH = {
   devices: 'devices:list',
   connect: 'source:connect',
   send: 'tx:send',
-  saveFile: 'file:save'
+  saveFile: 'file:save',
+  simState: 'sim:state',
+  simCommand: 'sim:cmd'
 } as const;
