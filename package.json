@@ -1,0 +1,21 @@
+{
+  "name": "dali-scout",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @dali-scout/desktop",
+    "build": "npm run build -w @dali-scout/desktop",
+    "typecheck": "tsc -b packages/core packages/transports && npm run typecheck -w @dali-scout/desktop",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

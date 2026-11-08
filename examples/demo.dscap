@@ -1,0 +1,48 @@
+{"format":"dscap","version":1}
+{"t":1200000,"d":"rx","k":"forward","b":16,"h":"A5 00","s":"demo"}
+{"t":1218000,"d":"rx","k":"forward","b":16,"h":"A5 00","s":"demo"}
+{"t":1278000,"d":"rx","k":"forward","b":16,"h":"A7 00","s":"demo"}
+{"t":1296000,"d":"rx","k":"forward","b":16,"h":"A7 00","s":"demo"}
+{"t":1376000,"d":"rx","k":"forward","b":16,"h":"B1 00","s":"demo"}
+{"t":1398000,"d":"rx","k":"forward","b":16,"h":"B3 80","s":"demo"}
+{"t":1420000,"d":"rx","k":"forward","b":16,"h":"B5 00","s":"demo"}
+{"t":1442000,"d":"rx","k":"forward","b":16,"h":"A9 00","s":"demo"}
+{"t":1448000,"d":"rx","k":"backward","b":8,"h":"FF","s":"demo"}
+{"t":1478000,"d":"rx","k":"forward","b":16,"h":"B5 40","s":"demo"}
+{"t":1500000,"d":"rx","k":"forward","b":16,"h":"A9 00","s":"demo"}
+{"t":1530000,"d":"rx","k":"forward","b":16,"h":"B7 01","s":"demo"}
+{"t":1555000,"d":"rx","k":"forward","b":16,"h":"B9 01","s":"demo"}
+{"t":1561000,"d":"rx","k":"backward","b":8,"h":"FF","s":"demo"}
+{"t":1591000,"d":"rx","k":"forward","b":16,"h":"AB 00","s":"demo"}
+{"t":1621000,"d":"rx","k":"forward","b":16,"h":"A1 00","s":"demo"}
+{"t":3121000,"d":"rx","k":"forward","b":16,"h":"FE 00","s":"demo"}
+{"t":3921000,"d":"rx","k":"forward","b":16,"h":"FE FE","s":"demo"}
+{"t":4521000,"d":"rx","k":"forward","b":16,"h":"00 80","s":"demo"}
+{"t":5021000,"d":"rx","k":"forward","b":16,"h":"02 B4","s":"demo"}
+{"t":5421000,"d":"rx","k":"forward","b":16,"h":"01 A0","s":"demo"}
+{"t":5426000,"d":"rx","k":"backward","b":8,"h":"FE","s":"demo"}
+{"t":5826000,"d":"rx","k":"forward","b":16,"h":"03 A0","s":"demo"}
+{"t":5832000,"d":"rx","k":"backward","b":8,"h":"B4","s":"demo"}
+{"t":6132000,"d":"rx","k":"forward","b":16,"h":"01 90","s":"demo"}
+{"t":6137000,"d":"rx","k":"backward","b":8,"h":"04","s":"demo"}
+{"t":6437000,"d":"rx","k":"forward","b":16,"h":"05 91","s":"demo"}
+{"t":6737000,"d":"rx","k":"forward","b":16,"h":"01 99","s":"demo"}
+{"t":6742000,"d":"rx","k":"backward","b":8,"h":"08","s":"demo"}
+{"t":7042000,"d":"rx","k":"forward","b":16,"h":"FF A0","s":"demo"}
+{"t":8042000,"d":"rx","k":"forward","b":16,"h":"A3 C8","s":"demo"}
+{"t":8072000,"d":"rx","k":"forward","b":16,"h":"01 44","s":"demo"}
+{"t":8090000,"d":"rx","k":"forward","b":16,"h":"01 44","s":"demo"}
+{"t":8120000,"d":"rx","k":"forward","b":16,"h":"01 62","s":"demo"}
+{"t":8138000,"d":"rx","k":"forward","b":16,"h":"01 62","s":"demo"}
+{"t":8738000,"d":"rx","k":"forward","b":16,"h":"85 14","s":"demo"}
+{"t":9038000,"d":"rx","k":"forward","b":16,"h":"01 C0","s":"demo"}
+{"t":9043000,"d":"rx","k":"backward","b":8,"h":"04","s":"demo"}
+{"t":10243000,"d":"rx","k":"forward","b":16,"h":"C3 A0","s":"demo"}
+{"t":10258000,"d":"rx","k":"forward","b":16,"h":"C5 0F","s":"demo"}
+{"t":10273000,"d":"rx","k":"forward","b":16,"h":"C1 08","s":"demo"}
+{"t":10288000,"d":"rx","k":"forward","b":16,"h":"01 E2","s":"demo"}
+{"t":10688000,"d":"rx","k":"forward","b":16,"h":"C1 08","s":"demo"}
+{"t":10703000,"d":"rx","k":"forward","b":16,"h":"01 F8","s":"demo"}
+{"t":11403000,"d":"rx","k":"error","b":0,"h":"","e":"collision","s":"demo"}
+{"t":11903000,"d":"rx","k":"forward","b":24,"h":"01 02 03","s":"demo"}
+{"t":12303000,"d":"rx","k":"forward","b":16,"h":"FE 80","s":"demo"}
