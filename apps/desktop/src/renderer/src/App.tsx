@@ -1,15 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { toHex, type Row } from '@dali-scout/core';
 import { useMonitor } from './useMonitor';
+import { FilterPanel } from './FilterPanel';
+import { SendPanel } from './SendPanel';
+import { SourceBar } from './SourceBar';
+import { StatsPanel } from './StatsPanel';
+import { exportRows, type ExportFormat } from './exporters';
 
 const ROW_H = 22;
 const OVERSCAN = 20;
+type Panel = 'filter' | 'send' | 'stats' | null;
 
 export function App() {
   const m = useMonitor();
   const [follow, setFollow] = useState(true);
+  const [panel, setPanel] = useState<Panel>(null);
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
   const [speed, setSpeed] = useState(1);
+  const [filteredExport, setFilteredExport] = useState(true);
+  const [notice, setNotice] = useState('');
   const scroller = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ top: 0, height: 600 });
 
@@ -33,34 +42,68 @@ export function App() {
     if (!atBottom && follow) setFollow(false);
   };
 
+  const doExport = async (format: ExportFormat) => {
+    try {
+      const rows = m.exportRows(filteredExport);
+      const msg = await exportRows(rows, format, m.firstTs);
+      if (msg) setNotice(msg);
+    } catch (e) {
+      setNotice(`Export failed: ${(e as Error).message}`);
+    }
+  };
+
+  const toggle = (p: Exclude<Panel, null>) => setPanel((cur) => (cur === p ? null : p));
+
   const start = Math.max(0, Math.floor(view.top / ROW_H) - OVERSCAN);
   const end = Math.min(m.count, Math.ceil((view.top + view.height) / ROW_H) + OVERSCAN);
   const rows: { r: Row; i: number }[] = [];
   for (let i = start; i < end; i++) { const r = m.rowAt(i); if (r) rows.push({ r, i }); }
   const selected = selectedSeq !== null ? m.bySeq(selectedSeq) : undefined;
+  const running = m.source.state === 'running';
 
   return (
     <div className="app">
       <header className="toolbar">
         <strong className="brand">DALI Scout</strong>
+        <SourceBar running={running} />
+        <span className="sep" />
         <button onClick={() => window.dali.openCapture()}>Open capture…</button>
         <button onClick={() => window.dali.startDemo()}>Demo</button>
-        <button onClick={() => window.dali.stop()} disabled={m.source.state !== 'running'}>Stop</button>
-        <label>
-          Speed{' '}
-          <select value={speed} onChange={(e) => { const v = Number(e.target.value); setSpeed(v); window.dali.setReplaySpeed(v); }}>
-            {[0.5, 1, 2, 5, 10, 100].map((s) => <option key={s} value={s}>{s}×</option>)}
-          </select>
-        </label>
+        <button onClick={() => window.dali.stop()} disabled={!running}>Stop</button>
+        {m.source.kind === 'replay' && (
+          <label>
+            Speed{' '}
+            <select value={speed} onChange={(e) => { const v = Number(e.target.value); setSpeed(v); window.dali.setReplaySpeed(v); }}>
+              {[0.5, 1, 2, 5, 10, 100].map((s) => <option key={s} value={s}>{s}×</option>)}
+            </select>
+          </label>
+        )}
+      </header>
+
+      <div className="toolbar second">
+        <button className={panel === 'filter' ? 'on' : ''} onClick={() => toggle('filter')}>
+          Filter{m.filterActive ? ' ●' : ''}
+        </button>
+        <button className={panel === 'send' ? 'on' : ''} onClick={() => toggle('send')}>Send</button>
+        <button className={panel === 'stats' ? 'on' : ''} onClick={() => toggle('stats')}>Statistics</button>
         <span className="sep" />
         <button onClick={m.togglePause}>{m.paused ? `Resume (${m.heldCount})` : 'Pause'}</button>
         <button onClick={m.clear}>Clear</button>
         <label><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> Follow</label>
-        <input
-          className="search" type="search" placeholder="Search (all terms must match)…"
-          value={m.query} onChange={(e) => m.setQuery(e.target.value)}
-        />
-      </header>
+        <span className="grow" />
+        <label title="Export only the rows that match the current filter">
+          <input type="checkbox" checked={filteredExport} disabled={!m.filterActive}
+            onChange={(e) => setFilteredExport(e.target.checked)} /> filtered rows only
+        </label>
+        <span>Export:</span>
+        <button onClick={() => doExport('csv')} disabled={m.total === 0}>CSV</button>
+        <button onClick={() => doExport('txt')} disabled={m.total === 0}>Text</button>
+        <button onClick={() => doExport('dscap')} disabled={m.total === 0}>.dscap</button>
+      </div>
+
+      {panel === 'filter' && <FilterPanel filter={m.filter} onChange={m.setFilter} error={m.filterError} />}
+      {panel === 'send' && <SendPanel canSend={!!m.source.canSend && running} />}
+      {panel === 'stats' && <StatsPanel stats={m.stats()} />}
 
       <div className="thead row">
         <span className="c-seq">#</span><span className="c-time">Time [s]</span><span className="c-delta">Δ [ms]</span>
@@ -81,12 +124,13 @@ export function App() {
 
       <footer className="status">
         <span className={`dot ${m.source.state}`} />
-        {m.source.state === 'idle' && 'No source — open a capture or start the demo'}
-        {m.source.state === 'running' && `Replaying: ${m.source.label}`}
+        {m.source.state === 'idle' && 'No source — connect a device, open a capture or start the demo'}
+        {m.source.state === 'running' && `Active: ${m.source.label}${m.source.canSend ? '' : ' (receive only)'}`}
         {m.source.state === 'finished' && `Finished: ${m.source.label}`}
         {m.source.state === 'error' && `Error: ${m.source.error ?? 'unknown'}`}
+        {notice && <span className="notice">· {notice}</span>}
         <span className="grow" />
-        {m.query ? `${m.count} of ${m.total} telegrams` : `${m.total} telegrams`}
+        {m.filterActive ? `${m.count} of ${m.total} telegrams` : `${m.total} telegrams`}
         {m.paused && ' · paused'}
       </footer>
     </div>
@@ -123,7 +167,7 @@ function Detail({ r, bySeq, onJump }: { r: Row; bySeq: (s: number) => Row | unde
   return (
     <aside className="detail">
       <div><strong>{d.summary}</strong></div>
-      <div className="mono">#{r.seq} · {r.frame.dir} · {r.frame.bits} bit · {toHex(r.frame.data)} · layer {d.layer}</div>
+      <div className="mono">#{r.seq} · {r.frame.dir} · {r.frame.bits} bit · {toHex(r.frame.data)} · layer {d.layer} · source {r.frame.source}</div>
       {d.warnings.map((w, i) => <div key={i} className="warn">⚠ {w}</div>)}
       {link && <div>{d.answerTo !== undefined ? 'Answers' : 'Answered by'}{' '}
         <a href="#" onClick={(e) => { e.preventDefault(); onJump(link.seq); }}>#{link.seq}</a></div>}

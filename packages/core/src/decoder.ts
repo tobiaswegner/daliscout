@@ -7,6 +7,9 @@ export type DecodedClass =
   | 'arc' | 'config' | 'query' | 'special' | 'extended'
   | 'control-device' | 'answer' | 'error' | 'unknown';
 
+export type AddrKind = 'short' | 'group' | 'broadcast' | 'broadcast-unaddressed' | 'special';
+export interface Addr { kind: AddrKind; value?: number }
+
 export interface Decoded {
   layer: '102' | '103' | 'raw';
   class: DecodedClass;
@@ -14,6 +17,10 @@ export interface Decoded {
   summary: string;
   /** e.g. "Short 5", "Group 3", "Broadcast", "Special". */
   target: string;
+  /** Structured form of `target`; answers inherit the address of their query. */
+  addr?: Addr;
+  /** Arc power level (0-254) carried by or answered for this frame, if any. */
+  level?: number;
   command: string;
   params: string[];
   /** Filled in for queries once the reply has been seen. */
@@ -102,7 +109,8 @@ export class Decoder {
     const text = this.formatAnswer(p.kind, b);
     return base({
       layer: '102', class: 'answer', command: 'ANSWER', target: 'Gear',
-      summary: `→ ${text}`, params: [hexByte(b)], answerTo: p.seq
+      summary: `→ ${text}`, params: [hexByte(b)], answerTo: p.seq,
+      level: p.kind === 'level' && b !== MASK ? b : undefined
     });
   }
 
@@ -137,22 +145,31 @@ export class Decoder {
     if (a >= 0xa0 && a <= 0xfb) return this.decodeSpecial(a, d, seq);
 
     let target: string;
-    let selector: boolean; // S bit
-    selector = (a & 1) === 1;
-    if ((a & 0x80) === 0) target = `Short ${(a >> 1) & 0x3f}`;
-    else if ((a & 0xe0) === 0x80) target = `Group ${(a >> 1) & 0x0f}`;
-    else if (a >= 0xfe) target = 'Broadcast';
-    else target = 'Broadcast unaddressed';
+    let addr: Addr;
+    const selector = (a & 1) === 1; // S bit
+    if ((a & 0x80) === 0) {
+      addr = { kind: 'short', value: (a >> 1) & 0x3f };
+      target = `Short ${addr.value}`;
+    } else if ((a & 0xe0) === 0x80) {
+      addr = { kind: 'group', value: (a >> 1) & 0x0f };
+      target = `Group ${addr.value}`;
+    } else if (a >= 0xfe) {
+      addr = { kind: 'broadcast' };
+      target = 'Broadcast';
+    } else {
+      addr = { kind: 'broadcast-unaddressed' };
+      target = 'Broadcast unaddressed';
+    }
 
     if (!selector) {
       // Direct arc power control
       const lvl = formatLevel(d);
       return base({
-        layer: '102', class: 'arc', target, command: 'DAPC',
+        layer: '102', class: 'arc', target, addr, command: 'DAPC', level: d === MASK ? undefined : d,
         params: [lvl], summary: `${target} · DAPC ${d === MASK ? 'MASK (stop fade)' : lvl}`
       });
     }
-    return this.decodeCommand(target, d, seq, enableDT);
+    return { ...this.decodeCommand(target, d, seq, enableDT), addr };
   }
 
   private decodeCommand(target: string, op: number, seq: number, enableDT?: number): Decoded {
@@ -185,6 +202,7 @@ export class Decoder {
     if (def.answer) this.pending = { seq, def, kind: def.answer };
     return base({
       layer: '102', class: cls, target, command: name, params,
+      level: def.level && this.dtr0 !== undefined && this.dtr0 !== MASK ? this.dtr0 : undefined,
       expectsAnswer: !!def.answer, sendTwice: !!def.sendTwice,
       summary: `${target} · ${name}${params.length ? ' (' + params.join(', ') + ')' : ''}`
     });
@@ -221,7 +239,7 @@ export class Decoder {
     }
     if (def.answer) this.pending = { seq, def, kind: def.answer };
     return base({
-      layer: '102', class: 'special', target: 'Special', command: def.name, params,
+      layer: '102', class: 'special', target: 'Special', addr: { kind: 'special' }, command: def.name, params,
       expectsAnswer: !!def.answer, sendTwice: !!def.sendTwice,
       summary: `Special · ${def.name}${params.length ? ' ' + params.join(', ') : ''}`
     });

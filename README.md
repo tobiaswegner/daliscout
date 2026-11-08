@@ -2,12 +2,11 @@
 
 DALI bus monitor and gear simulator (Electron + TypeScript). See [docs/SPEC.md](docs/SPEC.md) for the full spec and milestone plan.
 
-## Status: milestone 1 (foundations)
+## Status: milestone 2 (monitor features + USB transports)
 - `packages/core` — frame model, stateful IEC 62386-102 decoder, answer correlation, `.dscap` capture format
 - `packages/transports` — transport interface, in-process virtual bus, capture replay
-- `apps/desktop` — Electron monitor: open a capture or run the demo, live table, text search, detail panel
-
-No hardware transport yet (USB HID is milestone 2).
+- `packages/transports` also has the USB drivers: **LUBA** (Lunatone DALI-2 USB, serial) and the legacy **DALI USB 24138923** (HID). Both are unit-tested against fake devices; the HID layout is **unverified on real hardware** (see `scripts/hid-probe.mjs`).
+- `apps/desktop` — Electron monitor: device selection, virtual bus, capture replay, live table, structured filters + presets, statistics, send panel, CSV/text/.dscap export
 
 ## Develop
 Requires **Node >= 22.12** (`nvm use` picks it up from `.nvmrc`).
@@ -17,7 +16,11 @@ npm test           # vitest (core + transports)
 npm run typecheck
 npm run dev        # Electron app with the demo capture ("Demo" button)
 node scripts/make-demo.mjs   # regenerate examples/demo.dscap
+node scripts/hid-probe.mjs   # dump raw HID reports of a DALI USB 24138923
 ```
+### USB devices on Linux
+- `sudo apt install libusb-1.0-0` (needed by `node-hid`)
+- `sudo cp docs/udev/70-dali-usb.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger`, then replug the interface
 Run `npm run dev` on the host, not in the devcontainer (no display / USB passthrough there).
 
 ### Troubleshooting

@@ -1,65 +1,19 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { parseCapture, type BusFrame } from '@dali-scout/core';
-import { ReplayTransport, type DaliTransport } from '@dali-scout/transports';
-import { CH, type SourceInfo } from '../shared';
+import { parseCapture } from '@dali-scout/core';
+import { CH, type ConnectTarget, type SaveRequest, type SendRequest } from '../shared';
+import { createDeviceTransport, listDevices } from './devices';
+import { SourceManager } from './source';
 
 let win: BrowserWindow | null = null;
-let current: DaliTransport | null = null;
-let replay: ReplayTransport | null = null;
-let replaySpeed = 1;
-let unsubscribe: (() => void)[] = [];
+const source = new SourceManager(() => win);
 
-// --- frame batching: never send one IPC message per frame ---------------------------
-let pending: BusFrame[] = [];
-let flushTimer: ReturnType<typeof setTimeout> | null = null;
-function queueFrame(f: BusFrame): void {
-  pending.push(f);
-  if (!flushTimer) {
-    flushTimer = setTimeout(() => {
-      flushTimer = null;
-      const batch = pending;
-      pending = [];
-      win?.webContents.send(CH.frames, batch);
-    }, 16);
-  }
-}
-
-function sendSource(s: SourceInfo): void {
-  win?.webContents.send(CH.source, s);
-}
-
-async function stopSource(): Promise<void> {
-  unsubscribe.forEach((u) => u());
-  unsubscribe = [];
-  const t = current;
-  current = null;
-  replay = null;
-  if (t) await t.close();
-}
-
-async function attach(t: DaliTransport, label: string): Promise<void> {
-  await stopSource();
-  current = t;
-  unsubscribe.push(t.onFrame(queueFrame));
-  unsubscribe.push(t.onStatus((status, err) => {
-    if (t !== current) return;
-    if (status === 'closed') sendSource({ state: 'finished', label });
-    else if (status === 'error') sendSource({ state: 'error', label, error: err?.message });
-  }));
-  await t.open();
-  sendSource({ state: 'running', label });
-}
-
-async function startReplayFile(path: string, label: string): Promise<void> {
+async function replayFile(path: string, label: string): Promise<void> {
   try {
-    const frames = parseCapture(await readFile(path, 'utf8'));
-    const r = new ReplayTransport(frames, { speed: replaySpeed });
-    await attach(r, label);
-    replay = r;
+    await source.startReplay(parseCapture(await readFile(path, 'utf8')), label);
   } catch (e) {
-    sendSource({ state: 'error', label, error: (e as Error).message });
+    win?.webContents.send(CH.source, { state: 'error', label, kind: 'replay', error: (e as Error).message });
   }
 }
 
@@ -71,15 +25,21 @@ function demoPath(): string {
 }
 
 function registerIpc(): void {
-  ipcMain.handle(CH.startDemo, () => startReplayFile(demoPath(), 'Demo capture'));
-  ipcMain.handle(CH.stop, async () => {
-    await stopSource();
-    sendSource({ state: 'idle', label: '' });
+  ipcMain.handle(CH.startDemo, () => replayFile(demoPath(), 'Demo capture'));
+  ipcMain.handle(CH.stop, () => source.stopAndReport());
+  ipcMain.handle(CH.speed, (_e, speed: number) => source.setReplaySpeed(speed));
+  ipcMain.handle(CH.devices, () => listDevices());
+  ipcMain.handle(CH.send, (_e, req: SendRequest) => source.send(req));
+
+  ipcMain.handle(CH.connect, async (_e, target: ConnectTarget) => {
+    if (target.kind === 'virtual') return source.startVirtual();
+    try {
+      await source.attach(createDeviceTransport(target.id), target.id, 'device');
+    } catch (e) {
+      win?.webContents.send(CH.source, { state: 'error', label: target.id, kind: 'device', error: (e as Error).message });
+    }
   });
-  ipcMain.handle(CH.speed, (_e, speed: number) => {
-    replaySpeed = speed;
-    replay?.setSpeed(speed);
-  });
+
   ipcMain.handle(CH.openCapture, async () => {
     if (!win) return;
     const res = await dialog.showOpenDialog(win, {
@@ -88,7 +48,15 @@ function registerIpc(): void {
       properties: ['openFile']
     });
     const file = res.filePaths[0];
-    if (!res.canceled && file) await startReplayFile(file, file.split(/[\\/]/).pop() ?? file);
+    if (!res.canceled && file) await replayFile(file, file.split(/[\\/]/).pop() ?? file);
+  });
+
+  ipcMain.handle(CH.saveFile, async (_e, req: SaveRequest) => {
+    if (!win) return { saved: false };
+    const res = await dialog.showSaveDialog(win, { defaultPath: req.defaultName, filters: req.filters });
+    if (res.canceled || !res.filePath) return { saved: false };
+    await writeFile(res.filePath, req.content, 'utf8');
+    return { saved: true, path: res.filePath };
   });
 }
 
@@ -110,4 +78,4 @@ app.whenReady().then(() => {
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
-app.on('window-all-closed', () => { void stopSource(); if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { void source.stop(); if (process.platform !== 'darwin') app.quit(); });

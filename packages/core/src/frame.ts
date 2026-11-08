@@ -1,7 +1,10 @@
 /** A single telegram observed on (or sent to) the bus. */
 export type FrameKind = 'forward' | 'backward' | 'error';
 export type FrameDir = 'rx' | 'tx';
-export type FrameError = 'framing' | 'collision' | 'short' | 'long';
+export type FrameError =
+  | 'framing' | 'collision' | 'short' | 'long'
+  | 'bus-fault'      // bus voltage low / shorted
+  | 'bus-restored';  // bus voltage back to normal
 
 export interface BusFrame {
   /** Monotonic timestamp in microseconds (number, not bigint, so it survives IPC/JSON). */
