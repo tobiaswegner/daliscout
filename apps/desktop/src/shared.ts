@@ -33,6 +33,8 @@ export interface SimState {
   paused: boolean;
   /** Set while a long operation such as commissioning runs. */
   busy?: string;
+  /** Present when the gears are attached to a real bus instead of the virtual one. */
+  live?: { canReply: boolean; replyMs?: { n: number; avg: number; max: number } };
 }
 
 export type SimCommand =
@@ -78,7 +80,7 @@ export interface DeviceList {
   warnings: string[];
 }
 
-export type ConnectTarget = { kind: 'virtual' } | { kind: 'device'; id: string };
+export type ConnectTarget = { kind: 'virtual' } | { kind: 'device'; id: string; /** also run the gear simulator on this bus */ simulate?: boolean };
 
 export interface SendRequest { hex: string; sendTwice: boolean; expectReply: boolean }
 export type SendResult = { ok: true } | { ok: false; error: string };

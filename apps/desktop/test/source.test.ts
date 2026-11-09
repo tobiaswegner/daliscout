@@ -209,3 +209,34 @@ describe('SourceManager simulator', () => {
     expect(await mgr.simCommand({ type: 'clear' })).toMatchObject({ ok: false, error: /virtual bus/ });
   });
 });
+
+class FakeUsb extends TransportBase {
+  caps: TransportCaps = { canSniff: true, canSend: true, canReply: true, hasHwTimestamps: false };
+  answers: number[] = [];
+  constructor() { super('usb', 'Fake USB'); }
+  async open() { this.setStatus('open'); }
+  async close() { this.setStatus('closed'); }
+  async send() { /* not needed */ }
+  async sendBackward(b: number) {
+    this.answers.push(b);
+    this.emitFrame(makeFrame(b.toString(16).padStart(2, '0'), { ts: 5, dir: 'tx', source: 'usb' }));
+  }
+  hear(data: number[]) { this.emitFrame(makeFrame(data.map((x) => x.toString(16).padStart(2, '0')).join(''), { ts: 1, source: 'usb' })); }
+}
+
+describe('live-bus simulation', () => {
+  it('answers a real controller through the device and reports reply latency', async () => {
+    const { mgr, simStates } = setup();
+    const usb = new FakeUsb();
+    await mgr.startLive(usb, 'Fake USB');
+    usb.hear([0x01, 0x90]);               // QUERY STATUS to short address 0 (gear 0 exists by default)
+    usb.hear([0xfe, 0x00]);               // broadcast off, no answer
+    expect(usb.answers).toHaveLength(1);
+    await wait(120);
+    const last = simStates().at(-1)!;
+    expect(last.live).toMatchObject({ canReply: true });
+    expect(last.live?.replyMs?.n).toBe(1);
+    expect((await mgr.simCommand({ type: 'commission', all: false })).ok).toBe(false);
+    await mgr.stop();
+  });
+});

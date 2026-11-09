@@ -85,7 +85,8 @@ body { background: var(--bg); color: var(--fg); font: 13px system-ui, sans-serif
 .sim { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .sim-empty { flex: 1; display: grid; place-content: center; gap: 8px; text-align: center; }
 .sim-main { flex: 1; display: flex; min-height: 0; }
-.sim-left { flex: 1; overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 12px; }
+.sim-left { flex: 1; min-width: 0; min-height: 0; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.sim-tiles { flex: 0 1 auto; max-height: 55%; overflow: auto; min-height: 90px; }
 .grid-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .tile { display: grid; justify-items: center; gap: 3px; padding: 8px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); cursor: pointer; }
 .tile.selected { outline: 2px solid var(--accent); }
@@ -112,8 +113,10 @@ body { background: var(--bg); color: var(--fg); font: 13px system-ui, sans-serif
 .scenes { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; }
 .scene { border: 1px solid var(--line); border-radius: 4px; text-align: center; padding: 1px 0; font-size: 12px; display: grid; }
 .scene small { color: var(--muted); font-size: 9px; } .scene.none { color: var(--muted); }
-.recent { display: grid; gap: 2px; font-size: 12px; }
-.rline { display: flex; gap: 10px; padding: 1px 6px; border-radius: 3px; white-space: nowrap; overflow: hidden; }
+.recent { flex: 1 1 140px; min-height: 100px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.rscroll { flex: 1; overflow: auto; min-height: 0; border: 1px solid var(--line); border-radius: 4px; }
+.rline { position: absolute; left: 0; right: 0; display: flex; gap: 10px; align-items: center; padding: 0 6px; white-space: nowrap; overflow: hidden; box-sizing: border-box; }
+.rline .num { min-width: 44px; text-align: right; }
 .rline.k-arc { background: var(--arc); } .rline.k-config { background: var(--config); } .rline.k-query { background: var(--query); }
 .rline.k-special { background: var(--special); } .rline.k-answer { background: var(--answer); } .rline.k-error { background: var(--error); }
 .pad { padding: 20px; } .busy { color: var(--accent); }
@@ -132,3 +135,7 @@ body { background: var(--bg); color: var(--fg); font: 13px system-ui, sans-serif
 .bar .fill { width: 100%; border-radius: 2px; }
 .bar small { position: absolute; bottom: -14px; left: 0; right: 0; text-align: center; font-size: 9px; color: var(--muted); }
 .bars { margin-bottom: 14px; }
+
+.live-banner { padding: 6px 10px; margin-bottom: 6px; border-radius: 4px; background: rgba(60,160,90,.18); font-size: 12px; }
+.live-banner.warn { background: rgba(200,150,40,.22); }
+.live-start { display: grid; gap: 6px; justify-items: center; margin-top: 14px; }

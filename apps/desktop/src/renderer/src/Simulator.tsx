@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type React from 'react';
 import {
   buildCommand, buildDapc, channelToLevel, colourLabel, extendedFadeUs, fadeRateStepsPerSecond, fadeTimeSeconds,
   gearBrightness, gearColour, kelvinToXy, levelToPercent, mirekToKelvin, mirekToXy, seqSetRgb, seqSetTc, seqSetXy,
   toHex, xyToRgb, type GearState, type Row, type SeqFrame, type TargetSpec
 } from '@dali-scout/core';
-import type { GearType, SimCommand, SimCommandResult, SimGearView, SimState } from '../../shared';
+import type { DeviceInfo, GearType, SimCommand, SimCommandResult, SimGearView, SimState } from '../../shared';
 import { SendPanel } from './SendPanel';
 
 interface Props {
@@ -13,7 +14,10 @@ interface Props {
   /** True when the virtual bus is the active source (the simulator is only live then). */
   active: boolean;
   canSend: boolean;
-  recent: Row[];
+  /** All captured telegrams, unfiltered. `version` changes when rows were added. */
+  total: number;
+  rowAt: (i: number) => Row | undefined;
+  version: number;
 }
 
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5, 10];
@@ -22,7 +26,7 @@ const GEAR_TYPES: [GearType, string][] = [
   ['rgb-ct', 'DT8 RGB+CT'], ['tc', 'DT8 CT only'], ['xy', 'DT8 xy only']
 ];
 
-export function Simulator({ sim, run, active, canSend, recent }: Props) {
+export function Simulator({ sim, run, active, canSend, total, rowAt, version }: Props) {
   const [selected, setSelected] = useState<number | null>(null);
   const [count, setCount] = useState(8);
   const [addressed, setAddressed] = useState(true);
@@ -53,6 +57,7 @@ export function Simulator({ sim, run, active, canSend, recent }: Props) {
         <h2>Gear simulator</h2>
         <p>The simulated gears live on the virtual bus.</p>
         <button onClick={() => window.dali.connect({ kind: 'virtual' })}>Start virtual bus</button>
+        <LiveStarter />
       </div>
     );
   }
@@ -60,6 +65,17 @@ export function Simulator({ sim, run, active, canSend, recent }: Props) {
   const busy = !!sim.busy;
   return (
     <div className="sim">
+      {sim.live && (
+        <div className={`live-banner ${sim.live.canReply ? '' : 'warn'}`}>
+          <b>Live bus.</b>{' '}
+          {sim.live.canReply
+            ? 'The gears answer real controllers through this interface.'
+            : 'This interface cannot transmit answers: the gears follow the traffic but stay silent.'}
+          {sim.live.replyMs && (
+            <span> Reply latency (query received → answer sent to USB): avg {sim.live.replyMs.avg.toFixed(1)} ms, max {sim.live.replyMs.max.toFixed(1)} ms over {sim.live.replyMs.n}. The bus allows the answer to start 2.9–9.2 ms after the query.</span>
+          )}
+        </div>
+      )}
       <div className="toolbar second">
         <span>Add</span>
         <input type="number" min={1} max={65} value={count} style={{ width: 56 }} onChange={(e) => setCount(Number(e.target.value))} />
@@ -115,13 +131,15 @@ export function Simulator({ sim, run, active, canSend, recent }: Props) {
 
       <div className="sim-main">
         <div className="sim-left">
+          <div className="sim-tiles">
           {gears.length === 0 && <div className="muted pad">No gears. Add some with the toolbar above.</div>}
           <div className="grid-tiles">
             {gears.map((g) => (
               <Tile key={g.id} g={g} selected={g.id === selected} onClick={() => setSelected(g.id)} />
             ))}
           </div>
-          <Recent rows={recent} />
+          </div>
+          <Recent total={total} rowAt={rowAt} version={version} />
         </div>
         {sel && <Detail g={sel} run={exec} onGone={() => setSelected(null)} />}
       </div>
@@ -187,18 +205,56 @@ function Tile({ g, selected, onClick }: { g: SimGearView; selected: boolean; onC
   );
 }
 
-function Recent({ rows }: { rows: Row[] }) {
+const RLINE_H = 20;
+
+/** All telegrams in a scrollable, virtualised list that follows the tail until the user scrolls up. */
+function Recent({ total, rowAt, version }: { total: number; rowAt: (i: number) => Row | undefined; version: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scroll, setScroll] = useState(0);
+  const [height, setHeight] = useState(200);
+  const follow = useRef(true);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setHeight(el.clientHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && follow.current) { el.scrollTop = el.scrollHeight; setScroll(el.scrollTop); }
+  }, [total, version, height]);
+
+  const first = Math.max(0, Math.floor(scroll / RLINE_H) - 5);
+  const last = Math.min(total, Math.ceil((scroll + height) / RLINE_H) + 5);
+  const items: React.ReactElement[] = [];
+  for (let i = first; i < last; i++) {
+    const r = rowAt(i);
+    if (!r) continue;
+    items.push(
+      <div key={r.seq} className={`rline k-${r.decoded.class}`} style={{ top: i * RLINE_H, height: RLINE_H }}>
+        <span className="muted num">{r.seq}</span>
+        <span className="mono">{toHex(r.frame.data)}</span>
+        <span>{r.decoded.summary}</span>
+        {r.decoded.answer && <span className="muted">→ {r.decoded.answer}</span>}
+      </div>
+    );
+  }
   return (
     <div className="recent">
-      <div className="muted">Recent telegrams</div>
-      {rows.length === 0 && <div className="muted">— none yet</div>}
-      {rows.map((r) => (
-        <div key={r.seq} className={`rline k-${r.decoded.class}`}>
-          <span className="mono">{toHex(r.frame.data)}</span>
-          <span>{r.decoded.summary}</span>
-          {r.decoded.answer && <span className="muted">→ {r.decoded.answer}</span>}
-        </div>
-      ))}
+      <div className="muted">Telegrams ({total}){!follow.current && ' — scrolled; scroll to the bottom to follow'}</div>
+      <div className="rscroll" ref={ref} onScroll={(e) => {
+        const el = e.currentTarget;
+        follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < RLINE_H;
+        setScroll(el.scrollTop);
+      }}>
+        {total === 0 && <div className="muted">— none yet</div>}
+        <div style={{ height: total * RLINE_H, position: 'relative' }}>{items}</div>
+      </div>
     </div>
   );
 }
@@ -392,5 +448,25 @@ export function Dt0Panel({ s }: { s: GearState }) {
         <tr><th>Reference power</th><td>{d.referenceUntilUs ? 'measuring…' : d.referencePowerDone ? 'done' : '—'}</td></tr>
       </tbody></table>
     </fieldset>
+  );
+}
+
+/** Offer the connected interfaces as a bus for the simulated gears. */
+function LiveStarter(): React.ReactElement {
+  const [list, setList] = useState<DeviceInfo[] | null>(null);
+  const [warn, setWarn] = useState<string[]>([]);
+  const refresh = async () => { const l = await window.dali.listDevices(); setList(l.devices); setWarn(l.warnings); };
+  return (
+    <div className="live-start">
+      <p className="muted">Or let the gears answer a real controller on a DALI bus. This needs an interface that can send answers; the legacy DALI USB (HID) can.</p>
+      <button onClick={refresh}>Find interfaces</button>
+      {list?.length === 0 && <div className="muted">No interface found.</div>}
+      {warn.map((w) => <div key={w} className="muted">{w}</div>)}
+      {list?.map((d) => (
+        <div key={d.id}>
+          <button onClick={() => window.dali.connect({ kind: 'device', id: d.id, simulate: true })}>Simulate on {d.label}</button>
+        </div>
+      ))}
+    </div>
   );
 }

@@ -1,7 +1,7 @@
 import {
   SimClock, Simulation, commissionBus, createGearState, type BusFrame, type CommissioningIo, type GearConfig
 } from '@dali-scout/core';
-import { VirtualBus, attachSimulation, type VirtualTransport } from '@dali-scout/transports';
+import { VirtualBus, attachSimulation, createHostClock, type DaliTransport, type VirtualTransport } from '@dali-scout/transports';
 import type { SimCommand, SimCommandResult, SimState } from '../shared';
 
 const TICK_MS = 50;
@@ -18,23 +18,47 @@ export class SimHost {
   readonly bus = new VirtualBus(undefined, { wireTiming: true });
   readonly console_: VirtualTransport = this.bus.createEndpoint('console');
   private readonly simEndpoint: VirtualTransport = this.bus.createEndpoint('sim', { canSend: false, canReply: true });
+  /** Reply latency (query frame -> answer written), live mode only. */
+  private latencies: number[] = [];
   private timer?: ReturnType<typeof setInterval>;
   private detach?: () => void;
   private busy?: string;
   private lastReply: BusFrame | undefined;
   private forceEmit = true;
 
-  constructor(private readonly emit: (s: SimState) => void) {
-    this.clock = new SimClock(this.bus.now);
+  /**
+   * @param live  a real bus transport (already attached to the monitor by the caller); the gears
+   *              then follow its traffic and answer through it. Without it the gears run on a virtual bus.
+   */
+  constructor(private readonly emit: (s: SimState) => void, private readonly live?: DaliTransport) {
+    this.clock = new SimClock(live ? createHostClock() : this.bus.now);
     this.sim.addGears(DEFAULT_GEARS, {}, 0);
   }
 
   /** Open the gear endpoint and start animating. The console transport is opened by the caller. */
   async start(): Promise<void> {
-    await this.simEndpoint.open();
-    this.detach = attachSimulation(this.simEndpoint, this.sim, { simTime: () => this.clock.now() });
-    // the console endpoint also sees the gears' answers; commissioning reads them from here
-    this.console_.onFrame((f) => { if (f.kind !== 'forward') this.lastReply = f; });
+    if (this.live) {
+      const t = this.live;
+      // measure how long answers take: query frame seen -> answer written
+      let queryAt = 0;
+      const offB = t.onFrame((f) => {
+        if (f.kind === 'forward' && f.dir === 'rx') queryAt = performance.now();
+        else if (f.kind === 'backward' && f.dir === 'tx' && queryAt) {
+          this.latencies.push(performance.now() - queryAt);
+          if (this.latencies.length > 50) this.latencies.shift();
+          queryAt = 0;
+          this.forceEmit = true;
+        }
+      });
+      // attach after the latency listener so it sees the query before the answer goes out
+      const offA = attachSimulation(t, this.sim, { simTime: () => this.clock.now() });
+      this.detach = () => { offA(); offB(); };
+    } else {
+      await this.simEndpoint.open();
+      this.detach = attachSimulation(this.simEndpoint, this.sim, { simTime: () => this.clock.now() });
+      // the console endpoint also sees the gears' answers; commissioning reads them from here
+      this.console_.onFrame((f) => { if (f.kind !== 'forward') this.lastReply = f; });
+    }
     this.timer = setInterval(() => this.tick(), TICK_MS);
     this.publish();
   }
@@ -57,8 +81,15 @@ export class SimHost {
     this.forceEmit = false;
     this.emit({
       active: true, gears: this.sim.snapshot(), maxGears: this.sim.maxGears,
-      speed: this.clock.speed, paused: this.clock.paused, busy: this.busy
+      speed: this.clock.speed, paused: this.clock.paused, busy: this.busy,
+      live: this.live ? { canReply: this.live.caps.canReply, replyMs: this.replyStats() } : undefined
     });
+  }
+
+  private replyStats(): { n: number; avg: number; max: number } | undefined {
+    const l = this.latencies;
+    if (!l.length) return undefined;
+    return { n: l.length, avg: l.reduce((a, b) => a + b, 0) / l.length, max: Math.max(...l) };
   }
 
   private setBusy(text: string | undefined): void {
@@ -129,6 +160,7 @@ export class SimHost {
       case 'speed': this.clock.setSpeed(cmd.value); this.forceEmit = true; return undefined;
       case 'pause': if (cmd.value) this.clock.pause(); else this.clock.resume(); this.forceEmit = true; return undefined;
       case 'commission': {
+        if (this.live) throw new Error('Commissioning is done by the controller on a live bus');
         if (this.busy) throw new Error(`Busy: ${this.busy}`);
         this.setBusy('Commissioning…');
         this.publish();

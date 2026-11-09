@@ -88,7 +88,8 @@ export function useMonitor() {
     firstTs: t0.current ?? 0,
     source, filter, setFilter: setFilterState, filterActive: active, filterError: compiled.current.error,
     paused, togglePause, heldCount: held.current.length, clear,
-    recent: (n: number): Row[] => s.all().slice(-n),
+    /** Unfiltered access for the simulator's telegram pane. */
+    allAt: (i: number): Row | undefined => s.at(i),
     stats: () => stats.current.snapshot(s.unanswered),
     exportRows
   };

@@ -31,7 +31,7 @@ const noop = async () => ({ ok: true as const });
 describe('Simulator view', () => {
   it('renders tiles for every gear', () => {
     const html = renderToString(
-      <Simulator sim={simState()} run={noop} active canSend recent={[]} />
+      <Simulator sim={simState()} run={noop} active canSend total={0} rowAt={() => undefined} version={0} />
     );
     expect(html).toContain('5 / 65 gears');
     expect(html).toContain('A0'); expect(html).toContain('A3');
@@ -62,7 +62,7 @@ describe('Simulator view', () => {
     expect(unaddressed).toContain('Commission this gear');
   });
   it('shows a start button while the virtual bus is not running', () => {
-    const html = renderToString(<Simulator sim={{ ...simState(), active: false }} run={noop} active={false} canSend={false} recent={[]} />);
+    const html = renderToString(<Simulator sim={{ ...simState(), active: false }} run={noop} active={false} canSend={false} total={0} rowAt={() => undefined} version={0} />);
     expect(html).toContain('Start virtual bus');
     expect(html).not.toContain('Commission');
   });
@@ -71,7 +71,7 @@ describe('Simulator view', () => {
     sim.addGears(65);
     const html = renderToString(
       <Simulator sim={{ active: true, gears: sim.snapshot(), maxGears: 65, speed: 2.5, paused: true, busy: 'Commissioning…' }}
-        run={noop} active canSend recent={[]} />
+        run={noop} active canSend total={0} rowAt={() => undefined} version={0} />
     );
     expect(html).toContain('only 64 addresses');
     expect(html).toContain('Commissioning…');
@@ -82,7 +82,7 @@ describe('Simulator view', () => {
     const s = new CaptureSession();
     s.push(makeFrame('0B A0', { ts: 0 }));
     s.push(makeFrame('FE', { ts: 6000 }));
-    const html = renderToString(<Simulator sim={simState()} run={noop} active canSend recent={[...s.all()]} />);
+    const html = renderToString(<Simulator sim={simState()} run={noop} active canSend total={s.length} rowAt={(i) => s.at(i)} version={1} />);
     expect(html).toContain('QUERY ACTUAL LEVEL');
     expect(html).toContain('→ 254');
   });

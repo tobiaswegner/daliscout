@@ -88,8 +88,15 @@ export class SourceManager {
     await this.attach(host.console_, 'Virtual bus', 'virtual', host);
   }
 
+  /** Real bus with the simulated gears attached; they answer through the device when it can reply. */
+  async startLive(t: DaliTransport, label: string): Promise<void> {
+    const host = new SimHost((s) => this.getWindow()?.webContents.send(CH.simState, s), t);
+    await host.start();
+    await this.attach(t, label, 'device', host);
+  }
+
   async simCommand(cmd: SimCommand): Promise<SimCommandResult> {
-    if (!this.sim) return { ok: false, error: 'The simulator runs on the virtual bus. Start it first.' };
+    if (!this.sim) return { ok: false, error: 'The simulator is not running. Start the virtual bus or simulate on a device first.' };
     return this.sim.command(cmd);
   }
 
