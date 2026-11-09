@@ -2,7 +2,7 @@ import type { BusFrame, FrameError } from '@dali-scout/core';
 import { TransportBase, createHostClock } from '../base.js';
 import type { DeviceStream, StreamFactory, TransportCaps, TxFrame } from '../types.js';
 import {
-  STATUS, decodeReport, encodeInit, encodeSend, reportFrame, reportStatus, type Report
+  STATUS, decodeReport, encodeAnswer, encodeInit, encodeSend, reportFrame, reportStatus, type Report
 } from './legacy-codec.js';
 
 export interface LegacyHidOptions {
@@ -18,10 +18,12 @@ interface Outstanding { echoesLeft: number; timer: ReturnType<typeof setTimeout>
 /**
  * Tridonic / Lunatone "DALI USB" (24138923) over HID. See legacy-codec.ts for the (unverified)
  * wire format. The device has no timestamps, so frames are stamped with the host clock when the
- * report arrives (USB polling adds a few ms of jitter). It cannot send backward frames.
+ * report arrives (USB polling adds a few ms of jitter). Backward frames are sent with
+ * command 0x15 (`sendBackward`); the device re-observes its own answer, which is reported as 'tx'.
+ * The device sends immediately, so `delayUs` is ignored: the reply latency is the USB round trip.
  */
 export class LegacyHidTransport extends TransportBase {
-  readonly caps: TransportCaps = { canSniff: true, canSend: true, canReply: false, hasHwTimestamps: false };
+  readonly caps: TransportCaps = { canSniff: true, canSend: true, canReply: true, hasHwTimestamps: false };
   /** Raw payloads of 'info' reports (firmware / serial replies), for diagnostics. */
   readonly infoReports: Uint8Array[] = [];
   /**
@@ -32,6 +34,7 @@ export class LegacyHidTransport extends TransportBase {
   /** Responses carrying a sequence number we did not send (ignored). */
   strayResponses = 0;
 
+  private ownAnswers: { byte: number; at: number }[] = [];
   private stream?: DeviceStream;
   private offs: (() => void)[] = [];
   private seq = 1 + Math.floor(Math.random() * 255);
@@ -81,6 +84,13 @@ export class LegacyHidTransport extends TransportBase {
     }
   }
 
+  async sendBackward(byte: number, _delayUs?: number): Promise<void> {
+    if (this._status !== 'open' || !this.stream) throw new Error('Transport is not open');
+    const report = encodeAnswer(byte);
+    this.ownAnswers.push({ byte, at: this.now() });
+    await this.stream.write(report);
+  }
+
   // ---- internals ----------------------------------------------------------------------
 
   private nextSeq(): number {
@@ -117,6 +127,12 @@ export class LegacyHidTransport extends TransportBase {
     const f = reportFrame(r);
 
     if (r.kind === 'observed') {
+      if (f?.bits === 8) {
+        // the device hears its own answer; label it as ours
+        const i = this.ownAnswers.findIndex((a) => a.byte === f.data[0] && ts - a.at < 200_000);
+        this.ownAnswers = this.ownAnswers.filter((a) => ts - a.at < 200_000);
+        if (i >= 0) { this.ownAnswers.splice(i, 1); this.emitFrame(make('tx', 8, f.data)); return; }
+      }
       if (f) this.emitFrame(make('rx', f.bits, f.data));
       return;
     }

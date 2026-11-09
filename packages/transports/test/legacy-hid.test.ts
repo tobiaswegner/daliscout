@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BusFrame } from '@dali-scout/core';
 import {
-  LegacyHidTransport, REPORT_SIZE, decodeReport, encodeInit, encodeSend, reportFrame, type DeviceStream
+  LegacyHidTransport, REPORT_SIZE, encodeAnswer, decodeReport, encodeInit, encodeSend, reportFrame, type DeviceStream
 } from '../src/index.js';
 
 afterEach(() => vi.useRealTimers());
@@ -30,6 +30,10 @@ describe('legacy HID codec', () => {
     expect(() => encodeSend(1, 8, Uint8Array.of(1), false)).toThrow(RangeError);
     expect(() => encodeSend(0, 16, Uint8Array.of(1, 2), false)).toThrow(RangeError);
     expect(() => encodeSend(256, 16, Uint8Array.of(1, 2), false)).toThrow(RangeError);
+  });
+  it('answer report carries the byte at index 1', () => {
+    expect(hex(encodeAnswer(0x5a).slice(0, 4))).toBe('15 5a 00 00');
+    expect(() => encodeAnswer(256)).toThrow(RangeError);
   });
   it('init reports', () => {
     expect(hex(encodeInit(0x00).slice(0, 3))).toBe('01 00 00');
@@ -77,7 +81,17 @@ describe('LegacyHidTransport', () => {
     const { dev, tr } = await setup();
     expect(tr.status).toBe('open');
     expect(dev.written.map((w) => hex(w.slice(0, 2)))).toEqual(['01 00', '01 02']);
-    expect(tr.caps).toMatchObject({ canSniff: true, canSend: true, canReply: false, hasHwTimestamps: false });
+    expect(tr.caps).toMatchObject({ canSniff: true, canSend: true, canReply: true, hasHwTimestamps: false });
+  });
+
+  it('sends backward frames with 0x15 and reports the re-observed answer as tx (hardware probe)', async () => {
+    const { dev, tr, frames } = await setup();
+    await tr.sendBackward(0xfe);
+    expect(hex(dev.written.at(-1)!.slice(0, 4))).toBe('15 fe 00 00');
+    dev.emit(report(0x15, 0)); // device acknowledgement, ignored
+    dev.emit(report(0x11, 0x72, [0, 0, 0, 0xfe], 0, 0x45db));
+    dev.emit(report(0x11, 0x72, [0, 0, 0, 0xfe], 0, 5));   // a second one is not ours
+    expect(frames.map(show)).toEqual(['tx 8 fe', 'rx 8 fe']);
   });
 
   it('reads firmware and serial from the init replies (captured from a real 24138923)', async () => {
