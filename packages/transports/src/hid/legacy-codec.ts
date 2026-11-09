@@ -19,6 +19,8 @@ export const USB_PRODUCT_ID = 0x0020;
 
 export const CMD_INIT = 0x01;
 export const CMD_SEND = 0x12;
+/** Transmit an 8-bit backward frame. Verified on hardware: the device emitted and re-observed byte [1]. */
+export const CMD_SEND_ANSWER = 0x15;
 export const FLAG_SEND_TWICE = 0x20;
 export const MODE_DALI16 = 3;
 export const MODE_DALI24 = 6;
@@ -38,6 +40,14 @@ export function encodeSend(seq: number, bits: number, data: Uint8Array, sendTwic
   const r = new Uint8Array(REPORT_SIZE);
   r[0] = CMD_SEND; r[1] = seq; r[2] = sendTwice ? FLAG_SEND_TWICE : 0; r[3] = mode;
   r.set(data, 8 - data.length); // right-aligned in the 4-byte frame field at [4..7]
+  return r;
+}
+
+/** Backward-frame request: `[0x15, answerByte, 0...]`. The other fields made no difference in the probe. */
+export function encodeAnswer(byte: number): Uint8Array {
+  if (!Number.isInteger(byte) || byte < 0 || byte > 255) throw new RangeError('answer must be a byte');
+  const r = new Uint8Array(REPORT_SIZE);
+  r[0] = CMD_SEND_ANSWER; r[1] = byte;
   return r;
 }
 
