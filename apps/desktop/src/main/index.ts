@@ -35,7 +35,9 @@ function registerIpc(): void {
   ipcMain.handle(CH.connect, async (_e, target: ConnectTarget) => {
     if (target.kind === 'virtual') return source.startVirtual();
     try {
-      await source.attach(createDeviceTransport(target.id), target.id, 'device');
+      const t = createDeviceTransport(target.id);
+      if (target.simulate) await source.startLive(t, target.id);
+      else await source.attach(t, target.id, 'device');
     } catch (e) {
       win?.webContents.send(CH.source, { state: 'error', label: target.id, kind: 'device', error: (e as Error).message });
     }

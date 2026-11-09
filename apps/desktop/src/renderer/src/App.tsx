@@ -136,8 +136,8 @@ export function App() {
       </div>
 
       {tab === 'simulator' && (
-        <Simulator sim={simState} run={runSim} active={running && m.source.kind === 'virtual'}
-          canSend={!!m.source.canSend && running} recent={m.recent(10)} />
+        <Simulator sim={simState} run={runSim} active={running && simState.active}
+          canSend={!!m.source.canSend && running} total={m.total} rowAt={m.allAt} version={m.version} />
       )}
 
       <footer className="status">
