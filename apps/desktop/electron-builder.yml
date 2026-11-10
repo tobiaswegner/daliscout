@@ -1,0 +1,33 @@
+appId: org.daliscout.app
+productName: DALI Scout
+copyright: MIT licence
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+# Everything else (workspace packages, React) is bundled by electron-vite.
+extraResources:
+  - from: ../../examples
+    to: examples
+  - from: ../../docs/udev
+    to: udev
+asarUnpack:
+  - "**/node_modules/node-hid/**"
+  - "**/node_modules/serialport/**"
+  - "**/node_modules/@serialport/**"
+npmRebuild: false   # node-hid and serialport ship N-API prebuilds
+linux:
+  executableName: dali-scout
+  target: [AppImage, deb]
+  category: Utility
+  maintainer: DALI Scout contributors
+mac:
+  target: [dmg]
+  category: public.app-category.developer-tools
+win:
+  target: [nsis, portable]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

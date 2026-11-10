@@ -6,22 +6,29 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "pack": "electron-vite build && electron-builder --dir",
+    "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
-    "@dali-scout/core": "*",
-    "@dali-scout/transports": "*",
     "node-hid": "^3.4.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
     "serialport": "^13.0.0"
   },
   "devDependencies": {
+    "@dali-scout/core": "*",
+    "@dali-scout/transports": "*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
-    "electron": "^45.2.3",
+    "electron": "45.2.3",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "vite": "^8.3.6"
-  }
+  },
+  "description": "DALI bus monitor and gear simulator",
+  "author": "DALI Scout contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/"
 }
