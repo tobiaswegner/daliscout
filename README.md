@@ -2,7 +2,7 @@
 
 DALI bus monitor and gear simulator (Electron + TypeScript). See [docs/SPEC.md](docs/SPEC.md) for the full spec and milestone plan.
 
-## Status: milestone 4 (DT8 colour and DT0 gear)
+## Status: milestone 5 (live-bus simulation) + packaging
 - `packages/core` — frame model, stateful IEC 62386-102 decoder, answer correlation, `.dscap` capture format
 - `packages/transports` — transport interface, in-process virtual bus, capture replay
 - `packages/transports` also has the USB drivers: **LUBA** (Lunatone DALI-2 USB, serial) and the legacy **DALI USB 24138923** (HID). Both are unit-tested against fake devices; the HID layout is **unverified on real hardware** (see `scripts/hid-probe.mjs`).
@@ -17,8 +17,16 @@ npm test           # vitest (core + transports)
 npm run typecheck
 npm run dev        # Electron app with the demo capture ("Demo" button)
 node scripts/make-demo.mjs   # regenerate examples/demo.dscap
+python3 scripts/make-icon.py  # regenerate apps/desktop/build/icon.png
 node scripts/hid-probe.mjs   # dump raw HID reports of a DALI USB 24138923
 ```
+### Packaging
+```sh
+npm run dist -w @dali-scout/desktop   # installers for the OS you run it on -> apps/desktop/release/
+npm run pack -w @dali-scout/desktop   # unpacked app only (quick check)
+```
+Linux: AppImage + deb, Windows: NSIS installer + portable exe, macOS: dmg. Cross-building is not supported by the native modules; the `Package` GitHub workflow builds all three (manually or on a `v*` tag). Builds are **unsigned**: Windows SmartScreen and macOS Gatekeeper will warn (macOS: right-click > Open). The demo capture and the udev rule ship in the app's `resources/` folder. On Linux the udev rule is still needed for non-root USB access (see below).
+
 ### USB devices on Linux
 - `sudo apt install libusb-1.0-0` (needed by `node-hid`)
 - `sudo cp docs/udev/70-dali-usb.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger`, then replug the interface
