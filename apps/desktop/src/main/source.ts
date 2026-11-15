@@ -69,6 +69,8 @@ export class SourceManager {
     } catch (e) {
       if (t === this.current) {
         this.current = null;
+        this.sim?.dispose();   // the gears have no bus to run on
+        this.sim = null;
         this.emitSource({ state: 'error', label, kind, error: (e as Error).message });
       }
     }

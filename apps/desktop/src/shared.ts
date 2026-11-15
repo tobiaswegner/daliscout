@@ -34,7 +34,11 @@ export interface SimState {
   /** Set while a long operation such as commissioning runs. */
   busy?: string;
   /** Present when the gears are attached to a real bus instead of the virtual one. */
-  live?: { canReply: boolean; replyMs?: { n: number; avg: number; max: number } };
+  live?: {
+    canReply: boolean; replyMs?: { n: number; avg: number; max: number };
+    /** DALI-over-IP counters, to see why nothing answers. */
+    net?: { listen: string; received: number; answered: number; ignored: number; lastIgnored?: string; lastPeer?: string };
+  };
 }
 
 export type SimCommand =
@@ -80,7 +84,11 @@ export interface DeviceList {
   warnings: string[];
 }
 
-export type ConnectTarget = { kind: 'virtual' } | { kind: 'device'; id: string; /** also run the gear simulator on this bus */ simulate?: boolean };
+export type ConnectTarget =
+  | { kind: 'virtual' }
+  | { kind: 'device'; id: string; /** also run the gear simulator on this bus */ simulate?: boolean }
+  /** DALI-over-IP (IEC 62386-104, UDP): `client` talks to a gateway at host:port, `server` listens on port. */
+  | { kind: 'ip'; role: 'client' | 'server'; host?: string; port: number; simulate?: boolean; /** server: listen on all interfaces, not just 127.0.0.1 */ listenAll?: boolean };
 
 export interface SendRequest { hex: string; sendTwice: boolean; expectReply: boolean }
 export type SendResult = { ok: true } | { ok: false; error: string };

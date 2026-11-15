@@ -7,3 +7,6 @@ export * from './luba/transport.js';
 export * from './hid/legacy-codec.js';
 export * from './hid/legacy-transport.js';
 export * from './sim-attach.js';
+export * from './dali104/codec.js';
+export * from './dali104/udp.js';
+export * from './dali104/transport.js';

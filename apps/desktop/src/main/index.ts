@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseCapture } from '@dali-scout/core';
+import { Dali104Transport } from '@dali-scout/transports';
 import { CH, type ConnectTarget, type SaveRequest, type SendRequest, type SimCommand } from '../shared';
 import { createDeviceTransport, listDevices } from './devices';
 import { SourceManager } from './source';
@@ -34,6 +35,17 @@ function registerIpc(): void {
 
   ipcMain.handle(CH.connect, async (_e, target: ConnectTarget) => {
     if (target.kind === 'virtual') return source.startVirtual();
+    if (target.kind === 'ip') {
+      const label = target.role === 'client' ? `DALI-over-IP → ${target.host}:${target.port}` : `DALI-over-IP server :${target.port}${target.simulate ? '' : ' (monitor only, no gears)'}`;
+      try {
+        const t = new Dali104Transport({ role: target.role, host: target.host, port: target.port, bindHost: target.listenAll ? '0.0.0.0' : '127.0.0.1', id: 'dali-ip', label, autoReconnect: true });
+        if (target.simulate) await source.startLive(t, label);
+        else await source.attach(t, label, 'device');
+      } catch (e) {
+        win?.webContents.send(CH.source, { state: 'error', label, kind: 'device', error: (e as Error).message });
+      }
+      return;
+    }
     try {
       const t = createDeviceTransport(target.id);
       if (target.simulate) await source.startLive(t, target.id);

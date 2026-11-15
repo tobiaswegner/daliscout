@@ -71,6 +71,15 @@ export function Simulator({ sim, run, active, canSend, total, rowAt, version }: 
           {sim.live.canReply
             ? 'The gears answer real controllers through this interface.'
             : 'This interface cannot transmit answers: the gears follow the traffic but stay silent.'}
+          {sim.live.net && (
+            <div>
+              {sim.live.net.listen}: {sim.live.net.received} packet{sim.live.net.received === 1 ? '' : 's'} received, {sim.live.net.answered} answered
+              {sim.live.net.lastPeer && <>, last from {sim.live.net.lastPeer}</>}
+              {sim.live.net.ignored > 0 && <>, <b>{sim.live.net.ignored} not understood</b> (last: <span className="mono">{sim.live.net.lastIgnored}</span>)</>}
+              {sim.live.net.received === 0 && sim.live.net.ignored === 0 && ' — nothing has arrived yet: check that the sender targets this PC and port, and tick "network" if it runs on another machine.'}
+              {sim.live.net.received > 0 && sim.live.net.answered === 0 && ' — packets arrive but no gear answered: queries must hit an existing short address (default gears are 0–7).'}
+            </div>
+          )}
           {sim.live.replyMs && (
             <span> Reply latency (query received → answer sent to USB): avg {sim.live.replyMs.avg.toFixed(1)} ms, max {sim.live.replyMs.max.toFixed(1)} ms over {sim.live.replyMs.n}. The bus allows the answer to start 2.9–9.2 ms after the query.</span>
           )}
@@ -455,6 +464,7 @@ export function Dt0Panel({ s }: { s: GearState }) {
 function LiveStarter(): React.ReactElement {
   const [list, setList] = useState<DeviceInfo[] | null>(null);
   const [warn, setWarn] = useState<string[]>([]);
+  const [ipPort, setIpPort] = useState(62386);
   const refresh = async () => { const l = await window.dali.listDevices(); setList(l.devices); setWarn(l.warnings); };
   return (
     <div className="live-start">
@@ -462,6 +472,13 @@ function LiveStarter(): React.ReactElement {
       <button onClick={refresh}>Find interfaces</button>
       {list?.length === 0 && <div className="muted">No interface found.</div>}
       {warn.map((w) => <div key={w} className="muted">{w}</div>)}
+      <div className="row-btns">
+        <span className="muted">or answer a DALI-over-IP controller on UDP port</span>
+        <input type="number" min={1} max={65535} value={ipPort} style={{ width: 70 }} onChange={(e) => setIpPort(Number(e.target.value))} />
+        <button disabled={!(ipPort >= 1 && ipPort <= 65535)}
+          title="Listens on 127.0.0.1 only; the controller must run on this PC"
+          onClick={() => window.dali.connect({ kind: 'ip', role: 'server', port: ipPort, simulate: true })}>Simulate on IP port {ipPort}</button>
+      </div>
       {list?.map((d) => (
         <div key={d.id}>
           <button onClick={() => window.dali.connect({ kind: 'device', id: d.id, simulate: true })}>Simulate on {d.label}</button>

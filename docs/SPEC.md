@@ -149,3 +149,17 @@ Sustain ≥ 1 000 frames/s without UI drops (theoretical bus max ≈ 50/s, so te
 - Timing: host write 0.8–2.2 ms after the query report; the answer was observed complete ~12–13 ms after the query report, i.e. it started ~3–4 ms after the query (window 2.9–9.17 ms). Reply latency is USB-bound and cannot be scheduled, so `delayUs` is ignored. Two samples only; collect more under load.
 - Not possible: collisions (`sendCollision`), since only valid 8-bit frames can be sent. Gears that would collide stay silent instead.
 - The legacy transport therefore has `canReply = true` and labels the re-observed answer `tx`.
+
+## 14. DALI-over-IP (milestone 6)
+Implemented in `packages/transports/src/dali104/` (`codec.ts`, `udp.ts`, `transport.ts`) from an example implementation of a DALI-over-IP peer (UDP, IEC 62386-104 Annex B.5). **The packet layout has not been checked against the standard text**; only the send-twice rule (9.4) has.
+
+**Wire format** (see the header of `codec.ts`): `DA | 08 fwd / 88 bwd | flags (bit 7 DTLS) | seq(2) | system address | len(2, 10 bit) | ADU`, ADU = `01 00 | format (bit 7 = device type follows) | [device type] | address | opcode | [answer]`. A backward packet repeats the query and carries the same sequence number. The codec is covered by golden-byte tests taken from that implementation. `packages/transports/test/dali104.test.ts` can also run the transport against an external peer script: set `DALI104_PEER` to its path (it must accept `--port`, `--gears`, `--types`); without it those tests are skipped.
+
+**Roles** (`Dali104Transport`):
+- `client`: DALI Scout is the controller; sends forward packets to a gateway (host:port, default 62386), shows answers by sequence number. Can send, cannot reply.
+- `server`: DALI Scout is the bus/telecommunication unit; a controller or gateway driver sends to it. Monitor sees every forward frame; the gear simulator answers through `sendBackward` (`canReply`). Listens on 127.0.0.1 unless "network" is ticked (UDP has no authentication).
+- ENABLE DEVICE TYPE travels as the device-type field; the transport shows it as the frame pair `C1 xx` + command and folds a sent `C1 xx` into the next packet. Send-twice commands go out once (104 9.4: the unit repeats them on the bus).
+- Send-twice (IEC 62386-104 9.4, verified against the standard text): "Send-twice commands defined in IEC 62386-102, -103, -2xx or -3xx need to be received only once before being executed, and shall be sent only once for each desired operation." So a controller sends INITIALISE, RANDOMISE, configuration commands etc. once. In server role the gear simulator delivers the second copy itself (`attachSimulation(..., { repeatSendTwice: true })`), as the telecommunication unit would on the bus; the monitor shows the command once. Without it the gears wait forever for a repeat and e.g. RANDOMISE never takes effect (seen with a real gateway driver, which then loops reading the random addresses).
+- Failed first `open()` is reported; after a socket error later on, the transport reconnects with 1, 2, 4 … 16 s backoff.
+
+**Unknown / not implemented** (needs the real Part 104 text): meaning of the transaction-type and source bytes, 24-bit control-device frames, 25-bit frames, error/status/keep-alive packets, DTLS, multi-gateway system addresses, answers to unanswered queries (the simulator sends no packet), timing between query and answer, multicast/discovery. Packets we do not understand are counted (`ignored`) and dropped.

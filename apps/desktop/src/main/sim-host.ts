@@ -1,7 +1,7 @@
 import {
   SimClock, Simulation, commissionBus, createGearState, type BusFrame, type CommissioningIo, type GearConfig
 } from '@dali-scout/core';
-import { VirtualBus, attachSimulation, createHostClock, type DaliTransport, type VirtualTransport } from '@dali-scout/transports';
+import { Dali104Transport, VirtualBus, attachSimulation, createHostClock, type DaliTransport, type VirtualTransport } from '@dali-scout/transports';
 import type { SimCommand, SimCommandResult, SimState } from '../shared';
 
 const TICK_MS = 50;
@@ -25,6 +25,7 @@ export class SimHost {
   private busy?: string;
   private lastReply: BusFrame | undefined;
   private forceEmit = true;
+  private lastNet = '';
 
   /**
    * @param live  a real bus transport (already attached to the monitor by the caller); the gears
@@ -51,7 +52,8 @@ export class SimHost {
         }
       });
       // attach after the latency listener so it sees the query before the answer goes out
-      const offA = attachSimulation(t, this.sim, { simTime: () => this.clock.now() });
+      // DALI-over-IP delivers send-twice commands once; the gears need both copies
+      const offA = attachSimulation(t, this.sim, { simTime: () => this.clock.now(), repeatSendTwice: t instanceof Dali104Transport });
       this.detach = () => { offA(); offB(); };
     } else {
       await this.simEndpoint.open();
@@ -74,7 +76,10 @@ export class SimHost {
   private tick(): void {
     this.sim.advance(this.clock.now());
     const { ids, structural } = this.sim.consumeChanges();
-    if (ids.length || structural || this.forceEmit) this.publish();
+    const net = JSON.stringify(this.netStats() ?? null);
+    const netChanged = net !== this.lastNet;
+    this.lastNet = net;
+    if (ids.length || structural || this.forceEmit || netChanged) this.publish();
   }
 
   private publish(): void {
@@ -82,8 +87,17 @@ export class SimHost {
     this.emit({
       active: true, gears: this.sim.snapshot(), maxGears: this.sim.maxGears,
       speed: this.clock.speed, paused: this.clock.paused, busy: this.busy,
-      live: this.live ? { canReply: this.live.caps.canReply, replyMs: this.replyStats() } : undefined
+      live: this.live ? { canReply: this.live.caps.canReply, replyMs: this.replyStats(), net: this.netStats() } : undefined
     });
+  }
+
+  private netStats(): NonNullable<SimState['live']>['net'] {
+    const t = this.live;
+    if (!(t instanceof Dali104Transport)) return undefined;
+    return {
+      listen: t.label, received: t.received, answered: t.answered, ignored: t.ignored,
+      lastIgnored: t.lastIgnoredHex, lastPeer: t.lastPeer
+    };
   }
 
   private replyStats(): { n: number; avg: number; max: number } | undefined {
