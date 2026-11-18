@@ -3,6 +3,8 @@ import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import { CaptureSession, Simulation, makeFrame } from '@dali-scout/core';
 import { App } from '../src/renderer/src/App';
+import { BookmarkPanel, HighlightPanel } from '../src/renderer/src/AnnotationPanels';
+import { compileRules } from '../src/renderer/src/annotations';
 import { Simulator } from '../src/renderer/src/Simulator';
 import type { SimState } from '../src/shared';
 
@@ -93,5 +95,29 @@ describe('App', () => {
     const html = renderToString(<App />);
     expect(html).toContain('Monitor'); expect(html).toContain('Simulator');
     expect(html).toContain('0 telegrams');
+  });
+});
+
+describe('find, highlight and bookmarks', () => {
+  it('shows the find bar and the new toolbar buttons', () => {
+    const html = renderToString(<App />);
+    expect(html).toContain('Find (Ctrl+F)'); expect(html).toContain('Highlight'); expect(html).toContain('Bookmarks');
+  });
+  it('renders rules and bookmarks', () => {
+    const rules = [{ id: 1, enabled: true, color: '#fde68a', filter: { text: 'scene' } }];
+    expect(renderToString(<HighlightPanel rules={rules} onChange={() => {}} />)).toContain('value="scene"');
+    const marks = new Map([[7, 'the odd one']]);
+    const html = renderToString(<BookmarkPanel marks={marks} bySeq={() => undefined} onJump={() => {}}
+      onNote={() => {}} onRemove={() => {}} onClearAll={() => {}} />);
+    expect(html).toContain('#7'); expect(html).toContain('the odd one');
+  });
+  it('colours the first matching enabled rule', () => {
+    const row = { seq: 1, frame: { dir: 'rx', data: new Uint8Array([0x0a, 0x80]), ts: 0 },
+      decoded: { target: 'Short 5', command: 'DAPC', params: [], summary: 'x', warnings: [], expectsAnswer: false } } as never;
+    const c = compileRules([
+      { id: 1, enabled: false, color: '#111111', filter: { text: 'dapc' } },
+      { id: 2, enabled: true, color: '#222222', filter: { text: 'dapc' } },
+      { id: 3, enabled: true, color: '#333333', filter: { text: 'dapc' } }], 0);
+    expect(c(row)).toBe('#222222');
   });
 });

@@ -86,3 +86,18 @@ export function compileFilter(f: RowFilter, t0: number): CompiledFilter {
   }
   return { match: preds.length === 0 ? () => true : (r) => preds.every((p) => p(r)) };
 }
+
+/**
+ * Index of the next row (dir = 1) or previous row (dir = -1) after `from` that satisfies `match`,
+ * wrapping around the ends. `from` may be -1 (nothing selected). Returns -1 when nothing matches.
+ */
+export function findRowIndex(
+  count: number, rowAt: (i: number) => Row | undefined, from: number, dir: 1 | -1, match: (r: Row) => boolean
+): number {
+  for (let step = 1; step <= count; step++) {
+    const i = (((from < 0 ? (dir === 1 ? -1 : count) : from) + dir * step) % count + count) % count;
+    const r = rowAt(i);
+    if (r && match(r)) return i;
+  }
+  return -1;
+}

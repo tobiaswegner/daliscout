@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CaptureSession, StatsTracker, buildCommand, buildDapc, buildSpecial, compileFilter, encodeAddressByte,
   frameDurationUs, isEmptyFilter, makeFrame, parseHexInput, rowsToCsv, rowsToText, Decoder, toHex,
-  type RowFilter
+  findRowIndex, type Row, type RowFilter
 } from '../src/index.js';
 
 const capture = () => {
@@ -163,5 +163,22 @@ describe('frame builder', () => {
     expect(Array.from(parseHexInput('0xFF, 0x90'))).toEqual([0xff, 0x90]);
     expect(Array.from(parseHexInput('ff90'))).toEqual([0xff, 0x90]);
     expect(() => parseHexInput('f')).toThrow();
+  });
+});
+
+describe('findRowIndex', () => {
+  const rows = [10, 20, 30, 20, 40].map((n, i) => ({ n, i }) as unknown as Row);
+  const at = (i: number) => rows[i];
+  const is20 = (r: Row) => (r as unknown as { n: number }).n === 20;
+  it('finds forwards and backwards, wrapping', () => {
+    expect(findRowIndex(5, at, -1, 1, is20)).toBe(1);
+    expect(findRowIndex(5, at, 1, 1, is20)).toBe(3);
+    expect(findRowIndex(5, at, 3, 1, is20)).toBe(1);
+    expect(findRowIndex(5, at, -1, -1, is20)).toBe(3);
+    expect(findRowIndex(5, at, 1, -1, is20)).toBe(3);
+  });
+  it('returns -1 when nothing matches or the list is empty', () => {
+    expect(findRowIndex(5, at, 2, 1, () => false)).toBe(-1);
+    expect(findRowIndex(0, at, -1, 1, () => true)).toBe(-1);
   });
 });
