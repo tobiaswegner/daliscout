@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import { CaptureSession, Simulation, makeFrame } from '@dali-scout/core';
 import { App } from '../src/renderer/src/App';
+import { StateBar } from '../src/renderer/src/StateBar';
 import { BookmarkPanel, HighlightPanel } from '../src/renderer/src/AnnotationPanels';
 import { compileRules } from '../src/renderer/src/annotations';
 import { Simulator } from '../src/renderer/src/Simulator';
@@ -119,5 +120,15 @@ describe('find, highlight and bookmarks', () => {
       { id: 2, enabled: true, color: '#222222', filter: { text: 'dapc' } },
       { id: 3, enabled: true, color: '#333333', filter: { text: 'dapc' } }], 0);
     expect(c(row)).toBe('#222222');
+  });
+});
+
+describe('StateBar', () => {
+  it('lists saved states and shows the restore notice', () => {
+    const html = renderToString(<StateBar busy={false} exec={async () => {}} report={() => {}}
+      persist={{ auto: true, restored: 'Restored 8 gears from the last session',
+        saved: [{ name: 'before-test', savedAt: '2026-11-19T10:00:00.000Z', gears: 12 }] }} />);
+    expect(html).toContain('before-test'); expect(html).toContain('12 gears');
+    expect(html).toContain('Restored 8 gears from the last session'); expect(html).toContain('Remember between sessions');
   });
 });

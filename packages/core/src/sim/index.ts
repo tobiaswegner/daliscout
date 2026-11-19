@@ -9,3 +9,4 @@ export * from './ext.js';
 export { DT8_PRESETS, createDt8State, renderColour, resolveDt8Config } from './dt8.js';
 export { createDt0State } from './dt0.js';
 export * from './visual.js';
+export * from './persist.js';

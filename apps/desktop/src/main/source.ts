@@ -3,6 +3,7 @@ import { parseHexInput, type BusFrame } from '@dali-scout/core';
 import { ReplayTransport, type DaliTransport } from '@dali-scout/transports';
 import { CH, type SendRequest, type SendResult, type SimCommand, type SimCommandResult, type SourceInfo, type SourceKind } from '../shared';
 import { SimHost } from './sim-host';
+import type { SimPersistence } from './sim-store';
 
 /** Owns the single active frame source and forwards its frames to the renderer in batches. */
 export class SourceManager {
@@ -15,7 +16,7 @@ export class SourceManager {
   private pending: BusFrame[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly getWindow: () => BrowserWindow | null) {}
+  constructor(private readonly getWindow: () => BrowserWindow | null, private readonly store?: SimPersistence) {}
 
   private emitSource(s: SourceInfo): void {
     this.getWindow()?.webContents.send(CH.source, s);
@@ -85,14 +86,14 @@ export class SourceManager {
   /** Virtual bus with simulated gears and a controller console. */
   async startVirtual(): Promise<void> {
     await this.stop();
-    const host = new SimHost((s) => this.getWindow()?.webContents.send(CH.simState, s));
+    const host = new SimHost((s) => this.getWindow()?.webContents.send(CH.simState, s), undefined, this.store);
     await host.start();
     await this.attach(host.console_, 'Virtual bus', 'virtual', host);
   }
 
   /** Real bus with the simulated gears attached; they answer through the device when it can reply. */
   async startLive(t: DaliTransport, label: string): Promise<void> {
-    const host = new SimHost((s) => this.getWindow()?.webContents.send(CH.simState, s), t);
+    const host = new SimHost((s) => this.getWindow()?.webContents.send(CH.simState, s), t, this.store);
     await host.start();
     await this.attach(t, label, 'device', host);
   }
@@ -100,6 +101,20 @@ export class SourceManager {
   async simCommand(cmd: SimCommand): Promise<SimCommandResult> {
     if (!this.sim) return { ok: false, error: 'The simulator is not running. Start the virtual bus or simulate on a device first.' };
     return this.sim.command(cmd);
+  }
+
+  /** Save the simulator state now (called when the app quits). */
+  flushSim(): void { this.sim?.flush(); }
+
+  /** The gear state as JSON text for a file, or null when the simulator is not running. */
+  exportSimState(): string | null {
+    return this.sim ? JSON.stringify(this.sim.exportState()) : null;
+  }
+
+  importSimState(text: string): SimCommandResult {
+    if (!this.sim) return { ok: false, error: 'The simulator is not running. Start the virtual bus or simulate on a device first.' };
+    try { return { ok: true, message: this.sim.importState(text) }; }
+    catch (e) { return { ok: false, error: (e as Error).message }; }
   }
 
   setReplaySpeed(speed: number): void {

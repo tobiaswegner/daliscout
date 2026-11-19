@@ -26,7 +26,9 @@ const api: DaliApi = {
     ipcRenderer.on(CH.simState, h);
     return () => ipcRenderer.off(CH.simState, h);
   },
-  simCommand: (c) => ipcRenderer.invoke(CH.simCommand, c)
+  simCommand: (c) => ipcRenderer.invoke(CH.simCommand, c),
+  exportSimState: () => ipcRenderer.invoke(CH.simExport),
+  importSimState: () => ipcRenderer.invoke(CH.simImport)
 };
 
 contextBridge.exposeInMainWorld('dali', api);

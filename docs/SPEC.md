@@ -86,12 +86,16 @@ Each `Gear` is a deterministic state machine driven by `(frame, now)` and a virt
 - **Built-in controller console**: command builder (target + command dropdown + params) and quick actions (broadcast on/off, scenes, colour picker → DT8 command sequences), so the simulator is usable on the virtual bus without a controller.
 - **Mode switch**: *Virtual bus* (simulator + console + monitor all attached) or *Live bus* (attached to a transport; gears answer a real controller; requires `canReply` for answers). Monitor shows both sides' traffic, simulator-originated answers are tagged `sim`.
 - Playback speed control for fades (0.1×–10×) and pause of the virtual clock.
+- **State save / restore** (requirements):
+  - *Automatic*: the complete gear state (all registers, scenes, groups, faults, DT0/DT8 state, running fades and timers) is saved while the simulator runs and restored when it starts, on the virtual bus and on a live bus alike. It can be switched off ("Remember between sessions"). A damaged saved state never blocks the start: the simulator falls back to the default gears and says why.
+  - *Manual, for testing*: named snapshots can be saved at any moment, restored (replacing all gears, also mid-fade) and deleted; the whole state can also be written to / read from a file (`.dsstate`, JSON) to share a test setup or keep it with a bug report. Restoring never leaves the simulator half-changed: a state that does not fit (too many gears, damaged data) is rejected as a whole with a message naming the faulty field.
+  - A restored state continues in time: fades and the 15-minute initialisation timer carry on from where they were, on the new clock.
 
 ## 5. Data-driven command tables
 `data/commands-*.json` entries: `{ code, name, sendTwice, answer: 'none'|'yes-no'|'byte'|'level'|'custom', params, stdRef, deviceType? }`. Decoder and gear engine share them (single source of truth). Include a CI test that every table entry has a decoder test and (for DT0/DT8) a simulator behaviour test.
 
 ## 6. Persistence & settings
-Electron `userData`: interface profiles, filters/highlights, last scenario, UI layout; captures are user-chosen files. Settings for time format, level format, theme (light/dark), language (EN first; i18n keys from the start, German planned).
+Electron `userData`: interface profiles, filters/highlights, UI layout, and the simulator state (`simulator/autosave.json` restored at start, `simulator/states/<name>.json` manual snapshots, `simulator/settings.json`); captures and exported simulator states are user-chosen files. Settings for time format, level format, theme (light/dark), language (EN first; i18n keys from the start, German planned).
 
 ## 7. Non-functional
 Sustain ≥ 1 000 frames/s without UI drops (theoretical bus max ≈ 50/s, so test with replay at high speed); decoder < 50 µs/frame; deterministic simulation (virtual clock) for reproducible tests; no network access except the user-configured IP transport; MIT licence stays.
@@ -103,6 +107,7 @@ Sustain ≥ 1 000 frames/s without UI drops (theoretical bus max ≈ 50/s, so te
 4. **DT8 + DT0** — *implemented*: DT8 colour (xy, Tc, primary N, RGBWAF; presets RGB, RGBW, RGB+CT, CT, xy), DT0 lamp gear, colour fading, scene colours, colour decoding in the monitor, colour visualisation (lamp colour, CIE diagram, Tc slider, channel bars), colour controls that send real DT8 sequences over the bus, 65-gear mixed demo. See §12.
 5. **Live-bus simulation**: attach gears to real transport, reply timing, `canReply` handling; end-to-end test with a real controller.
 6. **DALI-over-IP (Part 104)**: implement from user-supplied spec/example code; loopback test server; reconnect handling.
+6b. **Simulator state persistence** — *implemented*: automatic save and restore between sessions, named snapshots, state files; see §15.
 7. **Polish & release**: DT edge cases, i18n, packaging for 3 OSes, docs, example captures/scenarios.
 
 ## 9. Verification
@@ -122,7 +127,7 @@ Sustain ≥ 1 000 frames/s without UI drops (theoretical bus max ≈ 50/s, so te
 **Two clocks.** The send-twice window (100 ms) uses *bus* time; fades and the 15-minute initialisation timer use *simulation* time, so slowing the simulation down does not break send-twice.
 **Answers.** Identical answers from several gears form one valid backward frame; differing answers produce a `collision` error frame. Reply delay is a fixed 6 ms (spec range 2.9–9.17 ms), not random.
 **Virtual bus.** Frames are queued so a reply never overtakes its query. With `wireTiming` frames occupy the bus for their real duration (forward 15.8 ms, backward 9.2 ms) with a 9.17 ms guard, so scripted sequences like commissioning show realistic timestamps and bus load.
-**Not yet simulated / simplified** (candidates for later milestones): device types (hook exists: `Gear.extended`; DT0/DT8 are milestone 4), DALI-2 input devices (24-bit frames are ignored by gears), `PHYSICAL SELECTION` (no button to press), manufacturer-specific mode, persistence of simulator scenarios to disk, random reply delay, live-bus mode (milestone 5).
+**Not yet simulated / simplified** (candidates for later milestones): device types (hook exists: `Gear.extended`; DT0/DT8 are milestone 4), DALI-2 input devices (24-bit frames are ignored by gears), `PHYSICAL SELECTION` (no button to press), manufacturer-specific mode, random reply delay, live-bus mode (milestone 5).
 **Behaviour taken from memory of IEC 62386-102 — verify against the standard:**
 - DAPC to 0 fades with the fade time; `OFF` and `RECALL MIN/MAX`, `STEP *`, `ON AND STEP UP` are immediate.
 - Fading is linear in level steps; fading up from off starts at the minimum level, fading down to off passes the minimum level and switches off at the end.
@@ -163,3 +168,11 @@ Implemented in `packages/transports/src/dali104/` (`codec.ts`, `udp.ts`, `transp
 - Failed first `open()` is reported; after a socket error later on, the transport reconnects with 1, 2, 4 … 16 s backoff.
 
 **Unknown / not implemented** (needs the real Part 104 text): meaning of the transaction-type and source bytes, 24-bit control-device frames, 25-bit frames, error/status/keep-alive packets, DTLS, multi-gateway system addresses, answers to unanswered queries (the simulator sends no packet), timing between query and answer, multicast/discovery. Packets we do not understand are counted (`ignored`) and dropped.
+
+## 15. Simulator state persistence
+**What is saved.** `Simulation.exportState(simNowUs)` returns a `SimStateFile` (`packages/core/src/sim/persist.ts`): `{format: 'dali-scout-sim', version: 1, savedAt, name?, simNowUs, nextId, gears: [{id, state}]}` where `state` is the complete `GearState` (registers, scenes, groups, faults, `dt0`, `dt8` incl. colour registers and scene colours). Not saved: the clock speed and pause (view settings), the bus monitor's capture, the send-twice bookkeeping of the gears (a pending first copy of a send-twice command is dropped).
+**Time.** Fades and timers hold absolute simulation times. The file stores the clock reading at save (`simNowUs`); on restore every time field is shifted by the difference to the new clock (`rebaseGearTimes`), so a running fade or the initialisation timer continues where it was, also after a restart of the app.
+**Validation.** `parseSimState` checks files from disk or users: format and version, unique gear ids, and each gear's shape against a template created by `createGearState` (types, required fields, 16 scenes, short address 0–63). Errors name the path (`gear 3.dt8.actual: missing ...`). `importState` builds all gears first and swaps them in only when every one is valid, so a rejected state leaves the running gears untouched. Ids are kept, new gears continue after the highest id.
+**Files** (`apps/desktop/src/main/sim-store.ts`, under `<userData>/simulator/`): `autosave.json` (written at most every 2 s while changes happen, and on stop/quit, atomically via temp file + rename), `settings.json` (`restoreOnStart`, default on), `states/<name>.json` (manual snapshots; names are cleaned to safe file names, ≤ 60 chars). A damaged `autosave.json` is renamed to `autosave.bad.json` and the simulator starts with the default 8 gears.
+**UI.** The Simulator tab has a "State" bar: *Remember between sessions*, name + *Save state*, a list of saved states with *Restore* and *Delete*, *Save to file…* / *Load file…* (`.dsstate`). A notice shows when the last session was restored or could not be.
+**Limits / open points.** The simulator always starts with the saved gears, including a deliberately emptied bus (use "Remember between sessions" off, or restore a snapshot, to start from the defaults). Snapshots do not include the monitor capture; export it separately. The file format is versioned (`version: 1`); a future change must add a migration rather than break old files.

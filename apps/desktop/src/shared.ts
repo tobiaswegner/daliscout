@@ -17,10 +17,16 @@ export interface DaliApi {
   /** Subscribe to simulator snapshots (pushed when something changed, at most ~20 per second). */
   onSimState(cb: (s: SimState) => void): () => void;
   simCommand(cmd: SimCommand): Promise<SimCommandResult>;
+  /** Save the gear state to a file chosen in a dialog. */
+  exportSimState(): Promise<SimCommandResult>;
+  /** Load a gear state from a file chosen in a dialog. */
+  importSimState(): Promise<SimCommandResult>;
 }
 
 /** What kind of gear to add: plain, DT0 lamp, or a DT8 colour preset. */
 export type GearType = 'plain' | 'dt0' | 'rgb' | 'rgbw' | 'rgb-ct' | 'tc' | 'xy';
+
+export interface SavedStateInfo { name: string; savedAt: string; gears: number }
 
 export interface SimGearView { id: number; state: GearState }
 
@@ -33,6 +39,16 @@ export interface SimState {
   paused: boolean;
   /** Set while a long operation such as commissioning runs. */
   busy?: string;
+  /** Saving and restoring of the gear state. */
+  persist?: {
+    /** Remember the state between sessions. */
+    auto: boolean;
+    saved: SavedStateInfo[];
+    /** Set at start when the last session's state was restored. */
+    restored?: string;
+    /** Set at start when the saved state could not be used (the simulator then starts with defaults). */
+    error?: string;
+  };
   /** Present when the gears are attached to a real bus instead of the virtual one. */
   live?: {
     canReply: boolean; replyMs?: { n: number; avg: number; max: number };
@@ -53,7 +69,11 @@ export type SimCommand =
   | { type: 'speed'; value: number }
   | { type: 'pause'; value: boolean }
   | { type: 'commission'; all: boolean }
-  | { type: 'scenario'; name: 'mixed65' };
+  | { type: 'scenario'; name: 'mixed65' }
+  | { type: 'saveState'; name: string }
+  | { type: 'restoreState'; name: string }
+  | { type: 'deleteState'; name: string }
+  | { type: 'autoState'; value: boolean };
 
 export type SimCommandResult = { ok: true; message?: string } | { ok: false; error: string };
 
@@ -111,5 +131,7 @@ export const CH = {
   send: 'tx:send',
   saveFile: 'file:save',
   simState: 'sim:state',
-  simCommand: 'sim:cmd'
+  simCommand: 'sim:cmd',
+  simExport: 'sim:export',
+  simImport: 'sim:import'
 } as const;

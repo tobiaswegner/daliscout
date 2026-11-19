@@ -7,6 +7,7 @@ import {
 } from '@dali-scout/core';
 import type { DeviceInfo, GearType, SimCommand, SimCommandResult, SimGearView, SimState } from '../../shared';
 import { SendPanel } from './SendPanel';
+import { StateBar } from './StateBar';
 
 interface Props {
   sim: SimState;
@@ -135,6 +136,11 @@ export function Simulator({ sim, run, active, canSend, total, rowAt, version }: 
         {sim.busy && <span className="busy">⏳ {sim.busy}</span>}
         {message && <span className={message.ok ? 'ok' : 'warn'}>{message.ok ? '✓' : '⚠'} {message.text}</span>}
       </div>
+
+      {sim.persist && (
+        <StateBar persist={sim.persist} busy={busy} exec={exec}
+          report={(r) => setMessage(r.ok ? (r.message ? { ok: true, text: r.message } : null) : { ok: false, text: r.error })} />
+      )}
 
       {consoleOpen && <SendPanel canSend={canSend} />}
 

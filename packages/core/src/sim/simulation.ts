@@ -1,4 +1,5 @@
 import { Gear, type Rng } from './gear.js';
+import { SIM_STATE_FORMAT, SIM_STATE_VERSION, rebaseGearTimes, type SimStateFile } from './persist.js';
 import type { GearConfig, GearState, SimReply, Times } from './types.js';
 
 export interface SimulationOptions {
@@ -96,5 +97,36 @@ export class Simulation {
 
   snapshot(): GearInfo[] {
     return this.gearList.map((g) => ({ id: g.id, state: g.snapshot() }));
+  }
+
+  /** Capture every gear's complete state. `simNowUs` is the simulation clock at this moment. */
+  exportState(simNowUs: number, name?: string): SimStateFile {
+    return {
+      format: SIM_STATE_FORMAT, version: SIM_STATE_VERSION, savedAt: new Date().toISOString(), name,
+      simNowUs, nextId: this.nextId,
+      gears: this.gearList.map((g) => ({ id: g.id, state: g.snapshot() }))
+    };
+  }
+
+  /**
+   * Replace all gears with a saved state (already parsed by `parseSimState`). Running fades and timers
+   * continue from where they were, measured on the clock that now reads `simNowUs`. Throws, leaving the
+   * current gears untouched, when the state does not fit.
+   */
+  importState(file: SimStateFile, simNowUs: number): void {
+    if (file.gears.length > this.maxGears) throw new Error(`The state has ${file.gears.length} gears, at most ${this.maxGears} fit`);
+    const delta = simNowUs - file.simNowUs;
+    const gears = file.gears.map(({ id, state }) => {
+      const s = structuredClone(state);
+      rebaseGearTimes(s, delta);
+      const g = new Gear(id, { deviceTypes: s.deviceTypes, colour: s.dt8?.cfg }, this.rng);
+      Object.assign(g.s, s);
+      g.onChange = () => this.dirty.add(g.id);
+      return g;
+    });
+    this.gearList = gears;
+    this.nextId = Math.max(file.nextId, ...gears.map((g) => g.id + 1), 0);
+    this.dirty.clear();
+    this.structural = true;
   }
 }

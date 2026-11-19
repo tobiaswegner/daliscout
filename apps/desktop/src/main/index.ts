@@ -3,12 +3,13 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseCapture } from '@dali-scout/core';
 import { Dali104Transport } from '@dali-scout/transports';
-import { CH, type ConnectTarget, type SaveRequest, type SendRequest, type SimCommand } from '../shared';
+import { CH, type ConnectTarget, type SaveRequest, type SendRequest, type SimCommand, type SimCommandResult } from '../shared';
 import { createDeviceTransport, listDevices } from './devices';
 import { SourceManager } from './source';
+import { SimStore } from './sim-store';
 
 let win: BrowserWindow | null = null;
-const source = new SourceManager(() => win);
+let source: SourceManager;
 
 async function replayFile(path: string, label: string): Promise<void> {
   try {
@@ -26,6 +27,28 @@ function demoPath(): string {
 }
 
 function registerIpc(): void {
+  ipcMain.handle(CH.simExport, async (): Promise<SimCommandResult> => {
+    const text = source.exportSimState();
+    if (!win || text === null) return { ok: false, error: 'The simulator is not running. Start the virtual bus or simulate on a device first.' };
+    const res = await dialog.showSaveDialog(win, {
+      title: 'Save simulator state', defaultPath: 'simulator-state.dsstate',
+      filters: [{ name: 'DALI Scout simulator state', extensions: ['dsstate'] }]
+    });
+    if (res.canceled || !res.filePath) return { ok: true };
+    await writeFile(res.filePath, text, 'utf8');
+    return { ok: true, message: `Saved to ${res.filePath}` };
+  });
+  ipcMain.handle(CH.simImport, async (): Promise<SimCommandResult> => {
+    if (!win) return { ok: true };
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Load simulator state',
+      filters: [{ name: 'DALI Scout simulator state', extensions: ['dsstate', 'json'] }],
+      properties: ['openFile']
+    });
+    const file = res.filePaths[0];
+    if (res.canceled || !file) return { ok: true };
+    return source.importSimState(await readFile(file, 'utf8'));
+  });
   ipcMain.handle(CH.startDemo, () => replayFile(demoPath(), 'Demo capture'));
   ipcMain.handle(CH.stop, () => source.stopAndReport());
   ipcMain.handle(CH.speed, (_e, speed: number) => source.setReplaySpeed(speed));
@@ -89,8 +112,10 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  source = new SourceManager(() => win, new SimStore(join(app.getPath('userData'), 'simulator')));
   registerIpc();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
-app.on('window-all-closed', () => { void source.stop(); if (process.platform !== 'darwin') app.quit(); });
+app.on('before-quit', () => source?.flushSim());
+app.on('window-all-closed', () => { void source?.stop(); if (process.platform !== 'darwin') app.quit(); });

@@ -1,11 +1,15 @@
 import {
-  SimClock, Simulation, commissionBus, createGearState, type BusFrame, type CommissioningIo, type GearConfig
+  SimClock, Simulation, commissionBus, createGearState, parseSimState,
+  type BusFrame, type CommissioningIo, type GearConfig, type SimStateFile
 } from '@dali-scout/core';
 import { Dali104Transport, VirtualBus, attachSimulation, createHostClock, type DaliTransport, type VirtualTransport } from '@dali-scout/transports';
-import type { SimCommand, SimCommandResult, SimState } from '../shared';
+import type { SavedStateInfo, SimCommand, SimCommandResult, SimState } from '../shared';
+import type { SimPersistence } from './sim-store';
 
 const TICK_MS = 50;
 const DEFAULT_GEARS = 8;
+/** At most one automatic save per this many ms, however often the state changes (fades change it constantly). */
+const AUTOSAVE_MS = 2000;
 
 /**
  * Runs the gear simulation on a virtual bus: owns the Simulation, its clock and the tick that
@@ -26,14 +30,72 @@ export class SimHost {
   private lastReply: BusFrame | undefined;
   private forceEmit = true;
   private lastNet = '';
+  private autoDirty = false;
+  private lastAutoSave = 0;
+  private saved: SavedStateInfo[] = [];
+  private restored?: string;
+  private restoreError?: string;
 
   /**
    * @param live  a real bus transport (already attached to the monitor by the caller); the gears
    *              then follow its traffic and answer through it. Without it the gears run on a virtual bus.
+   * @param store distinguishes sessions: when given (and enabled) the last session's gears are restored
+   *              and every change is saved again.
    */
-  constructor(private readonly emit: (s: SimState) => void, private readonly live?: DaliTransport) {
+  constructor(
+    private readonly emit: (s: SimState) => void, private readonly live?: DaliTransport,
+    private readonly store?: SimPersistence
+  ) {
     this.clock = new SimClock(live ? createHostClock() : this.bus.now);
-    this.sim.addGears(DEFAULT_GEARS, {}, 0);
+    let restored = false;
+    if (store?.autoEnabled()) {
+      try {
+        const f = store.loadAuto();
+        if (f) {
+          this.sim.importState(f, this.clock.now());
+          this.restored = `Restored ${f.gears.length} gear${f.gears.length === 1 ? '' : 's'} from the last session`;
+          restored = true;
+        }
+      } catch (e) {
+        this.restoreError = `The saved state could not be restored: ${(e as Error).message}`;
+      }
+    }
+    if (!restored) this.sim.addGears(DEFAULT_GEARS, {}, 0);
+    this.refreshSaved();
+  }
+
+  private refreshSaved(): void {
+    try { this.saved = this.store?.list() ?? []; } catch { this.saved = []; }
+  }
+
+  /** Write the automatic save now if anything changed since the last one. */
+  flush(): void {
+    if (!this.autoDirty || !this.store?.autoEnabled()) return;
+    this.autoDirty = false;
+    this.lastAutoSave = Date.now();
+    try { this.store.saveAuto(this.sim.exportState(this.clock.now())); }
+    catch (e) { this.restoreError = `Saving the state failed: ${(e as Error).message}`; this.forceEmit = true; }
+  }
+
+  /** The current gears as a state file (for export). */
+  exportState(): SimStateFile {
+    return this.sim.exportState(this.clock.now());
+  }
+
+  /** Replace the gears with the state in `text` (an exported file). */
+  importState(text: string): string {
+    return this.applyState(parseSimState(text), 'file');
+  }
+
+  private applyState(f: SimStateFile, what: string): string {
+    if (this.busy) throw new Error(`Busy: ${this.busy}`);
+    this.sim.importState(f, this.clock.now());
+    this.restored = undefined;
+    this.restoreError = undefined;
+    this.autoDirty = true;
+    this.forceEmit = true;
+    this.tick();
+    return `Restored ${what} (${f.gears.length} gear${f.gears.length === 1 ? '' : 's'})`;
   }
 
   /** Open the gear endpoint and start animating. The console transport is opened by the caller. */
@@ -68,6 +130,7 @@ export class SimHost {
   dispose(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    this.flush();
     this.detach?.();
     this.detach = undefined;
     this.emit({ active: false, gears: [], maxGears: this.sim.maxGears, speed: 1, paused: false });
@@ -79,6 +142,8 @@ export class SimHost {
     const net = JSON.stringify(this.netStats() ?? null);
     const netChanged = net !== this.lastNet;
     this.lastNet = net;
+    if (ids.length || structural) this.autoDirty = true;
+    if (this.autoDirty && Date.now() - this.lastAutoSave >= AUTOSAVE_MS) this.flush();
     if (ids.length || structural || this.forceEmit || netChanged) this.publish();
   }
 
@@ -87,6 +152,9 @@ export class SimHost {
     this.emit({
       active: true, gears: this.sim.snapshot(), maxGears: this.sim.maxGears,
       speed: this.clock.speed, paused: this.clock.paused, busy: this.busy,
+      persist: this.store
+        ? { auto: this.store.autoEnabled(), saved: this.saved, restored: this.restored, error: this.restoreError }
+        : undefined,
       live: this.live ? { canReply: this.live.caps.canReply, replyMs: this.replyStats(), net: this.netStats() } : undefined
     });
   }
@@ -173,6 +241,32 @@ export class SimHost {
       case 'powerCycle': gear(cmd.id).powerCycle(); return undefined;
       case 'speed': this.clock.setSpeed(cmd.value); this.forceEmit = true; return undefined;
       case 'pause': if (cmd.value) this.clock.pause(); else this.clock.resume(); this.forceEmit = true; return undefined;
+      case 'saveState': {
+        const store = this.store;
+        if (!store) throw new Error('Saving is not available');
+        const n = store.save(cmd.name, this.sim.exportState(this.clock.now(), cmd.name));
+        this.refreshSaved();
+        this.forceEmit = true;
+        return `Saved state "${n}" (${sim.gears.length} gear${sim.gears.length === 1 ? '' : 's'})`;
+      }
+      case 'restoreState': {
+        if (!this.store) throw new Error('Saving is not available');
+        return this.applyState(this.store.load(cmd.name), `"${cmd.name}"`);
+      }
+      case 'deleteState': {
+        if (!this.store) throw new Error('Saving is not available');
+        this.store.remove(cmd.name);
+        this.refreshSaved();
+        this.forceEmit = true;
+        return undefined;
+      }
+      case 'autoState': {
+        if (!this.store) throw new Error('Saving is not available');
+        this.store.setAuto(cmd.value);
+        if (cmd.value) this.autoDirty = true;
+        this.forceEmit = true;
+        return cmd.value ? 'The state is saved automatically and restored at start' : 'The state is no longer remembered between sessions';
+      }
       case 'commission': {
         if (this.live) throw new Error('Commissioning is done by the controller on a live bus');
         if (this.busy) throw new Error(`Busy: ${this.busy}`);
