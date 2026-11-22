@@ -5,6 +5,9 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: write   # needed to create the GitHub Release and upload assets
+
 jobs:
   package:
     strategy:
