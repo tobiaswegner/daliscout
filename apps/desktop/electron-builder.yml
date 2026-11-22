@@ -23,6 +23,10 @@ linux:
   target: [AppImage, deb]
   category: Utility
   maintainer: DALI Scout contributors
+deb:
+  # The npm name (@dali-scout/desktop) is not a valid Debian package/file name.
+  packageName: dali-scout
+  artifactName: dali-scout_${version}_${arch}.${ext}
 mac:
   target: [dmg]
   category: public.app-category.developer-tools
