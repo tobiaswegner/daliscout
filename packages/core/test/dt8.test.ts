@@ -159,7 +159,7 @@ describe('DT8 colour control', () => {
     b.dtr(100, 7, 9); b.ext(8, 0xec); b.ext(8, 0xe2);                     // W, A, F: only W exists on RGBW
     expect(b.s.dt8!.actual.rgbwaf[3]).toBe(100);
     expect(b.s.dt8!.actual.rgbwaf[4]).toBe(0);
-    expect(queryValue(b, 64 + 3)).toBe(100);
+    expect(queryValue(b, 9 + 3)).toBe(100);
   });
   it('RGBWAF control byte round trip', () => {
     const b = dt8('rgbw');
@@ -213,7 +213,7 @@ describe('DT8 fading', () => {
     b.word(0x1000); b.ext(8, 0xe0); b.ext(8, 0xe2);
     b.advance(500);
     expect(queryValue(b, 0)).toBe(b.s.dt8!.actual.x);
-    expect(queryValue(b, 192)).toBe(0x1000);
+    expect(queryValue(b, 224)).toBe(0x1000);   // report x
   });
 });
 
@@ -250,6 +250,27 @@ describe('DT8 scenes, reset, storage', () => {
     expect(b.s.dt8!.assigned[1]).toBe(2);
     b.tx(0xa3, 1);
     expect(b.ext(8, 0xfc)).toBe(2);
+  });
+  it('QUERY COLOUR VALUE returns the Tc limits: physical range of the gear and the configured one', () => {
+    const b = dt8('rgb-ct');
+    expect([128, 129, 130, 131].map((n) => queryValue(b, n))).toEqual([153, 153, 370, 370]);
+    // narrow the configured range: STORE COLOUR TEMPERATURE Tc LIMIT, DTR2 0 = coolest, 1 = warmest
+    b.s.dtr0 = 200 & 0xff; b.s.dtr1 = 0; b.s.dtr2 = 0;
+    b.ext(8, 0xf2); b.ext(8, 0xf2);
+    b.s.dtr0 = 300 & 0xff; b.s.dtr1 = 300 >> 8; b.s.dtr2 = 1;
+    b.ext(8, 0xf2); b.ext(8, 0xf2);
+    expect([128, 129, 130, 131].map((n) => queryValue(b, n))).toEqual([200, 153, 300, 370]);
+  });
+  it('a gear without Tc answers MASK for the limits; unknown selectors stay silent', () => {
+    expect(queryValue(dt8('rgb'), 129)).toBe(0xffff);
+    expect(queryValue(dt8('rgb-ct'), 100)).toBeUndefined();
+  });
+  it('QUERY COLOUR VALUE reads primaries 3-8, RGBWAF 9-15 and the primary count', () => {
+    const b = dt8('rgb-ct');
+    expect(queryValue(b, 82)).toBe(5);
+    expect(queryValue(b, 3)).toBe(b.s.dt8!.actual.primary[0]);
+    expect(queryValue(b, 9)).toBe(b.s.dt8!.actual.rgbwaf[0]);
+    expect(queryValue(b, 64)).toBe(Math.round(0.64 * 65536));
   });
   it('QUERY COLOUR VALUE selector for unknown ids is silent', () => {
     const b = dt8('rgb-ct');

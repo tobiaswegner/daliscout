@@ -36,9 +36,11 @@ describe('DT8 extended decoding', () => {
     expect(r[2]!.summary).toContain('Tc active');
   });
   it('query colour value shows which register is read', () => {
-    const r = run(['A3 82', 'C1 08', '0B FA']);
+    const r = run(['A3 C2', 'C1 08', '0B FA']);
     expect(r[2]!.params).toEqual(['temporary Tc']);
-    expect(run(['A3 C0', 'C1 08', '0B FA'])[2]!.params).toEqual(['report X']);
+    expect(run(['A3 E0', 'C1 08', '0B FA'])[2]!.params).toEqual(['report X']);
+    expect(run(['A3 81', 'C1 08', '0B FA'])[2]!.params).toEqual(['Tc physical coolest']);
+    expect(run(['A3 83', 'C1 08', '0B FA'])[2]!.params).toEqual(['Tc physical warmest']);
   });
   it('without ENABLE DEVICE TYPE the opcode stays unknown; ENABLE applies to one frame only', () => {
     const r = run(['0B E0', 'C1 08', '0B 90', '0B E0']);

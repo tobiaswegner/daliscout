@@ -28,16 +28,16 @@ export interface DtrValues { dtr0?: number; dtr1?: number; dtr2?: number }
 
 const hex16 = (v: number) => '0x' + v.toString(16).padStart(4, '0').toUpperCase();
 
-const COLOUR_SELECTORS: [number, number, string][] = [
-  [0, 0, 'X'], [1, 1, 'Y'], [2, 2, 'Tc'], [3, 8, 'primary'], [64, 69, 'RGBWAF channel'], [70, 70, 'RGBWAF control']
-];
+const COLOUR_NAMES = ['X', 'Y', 'Tc', 'primary 0', 'primary 1', 'primary 2', 'primary 3', 'primary 4', 'primary 5',
+  'R', 'G', 'B', 'W', 'A', 'F', 'RGBWAF control', 'colour type'];
 
 function selectorName(sel: number): string {
-  const bank = sel >= 192 ? 'report' : sel >= 128 ? 'temporary' : 'actual';
-  const base = sel >= 192 ? sel - 192 : sel >= 128 ? sel - 128 : sel;
-  for (const [lo, hi, name] of COLOUR_SELECTORS) {
-    if (base >= lo && base <= hi) return `${bank} ${name}${hi > lo ? ' ' + (base - lo) : ''}`;
-  }
+  if (sel <= 15) return `actual ${COLOUR_NAMES[sel]}`;
+  if (sel >= 64 && sel <= 81) return `primary ${Math.floor((sel - 64) / 3)} ${['x', 'y', 'Ty'][(sel - 64) % 3]}`;
+  if (sel === 82) return 'number of primaries';
+  if (sel >= 128 && sel <= 131) return ['Tc coolest', 'Tc physical coolest', 'Tc warmest', 'Tc physical warmest'][sel - 128]!;
+  if (sel >= 192 && sel <= 208) return `temporary ${COLOUR_NAMES[sel - 192]}`;
+  if (sel >= 224 && sel <= 240) return `report ${COLOUR_NAMES[sel - 224]}`;
   return `unknown selector ${sel}`;
 }
 

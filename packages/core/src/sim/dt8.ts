@@ -129,15 +129,40 @@ function setTemp(d: Dt8State, mode: ColourMode, patch: (t: ColourValues) => void
 }
 
 /** Selector for QUERY COLOUR VALUE (DTR0): +0 actual, +128 temporary, +192 report. */
+/**
+ * QUERY COLOUR VALUE selectors (DTR0), as listed in IEC 62386-209 and mirrored by vendor documentation:
+ * 0-15 actual colour (x, y, Tc, primaries 0-5, R G B W A F, RGBWAF control), 64-81 primary xy/Ty,
+ * 82 number of primaries, 128-131 Tc limits, 192-208 temporary colour, 224-240 report colour.
+ * Returns undefined for selectors that do not exist (no answer) and 0xFFFF (MASK) when the gear has no such value.
+ */
 function colourValue(d: Dt8State, sel: number): number | undefined {
-  const set = sel >= 192 ? d.report : sel >= 128 ? d.temp : d.actual;
-  const base = sel >= 192 ? sel - 192 : sel >= 128 ? sel - 128 : sel;
-  if (base === 0) return set.x;
-  if (base === 1) return set.y;
-  if (base === 2) return set.tc;
-  if (base >= 3 && base <= 8) return set.primary[base - 3];
-  if (base >= 64 && base <= 69) return set.rgbwaf[base - 64];
-  if (base === 70) return set.control;
+  const cfg = d.cfg;
+  const colourType = (m: ColourMode | null): number =>
+    m === 'xy' ? 0x10 : m === 'tc' ? 0x20 : m === 'primary' ? 0x40 : m === 'rgbwaf' ? 0x80 : MASK8;
+  const fromSet = (set: ColourValues, base: number, mode: ColourMode | null): number | undefined => {
+    if (base === 0) return set.x;
+    if (base === 1) return set.y;
+    if (base === 2) return set.tc;
+    if (base >= 3 && base <= 8) return set.primary[base - 3];
+    if (base >= 9 && base <= 14) return set.rgbwaf[base - 9];
+    if (base === 15) return set.control;
+    if (base === 16) return colourType(mode);
+    return undefined;
+  };
+  if (sel <= 15) return fromSet(d.actual, sel, d.mode);
+  if (sel >= 64 && sel <= 81) {
+    const n = Math.floor((sel - 64) / 3), part = (sel - 64) % 3;
+    const p = d.primaryXy[n];
+    if (n >= cfg.primaries || !p || part === 2) return MASK16;      // Ty (luminous flux) is not simulated
+    return Math.min(0xfffe, Math.round((part === 0 ? p.x : p.y) * 65536));
+  }
+  if (sel === 82) return cfg.primaries;
+  if (sel >= 128 && sel <= 131) {
+    if (!cfg.tc) return MASK16;
+    return [d.coolestMirek, cfg.physCoolestMirek, d.warmestMirek, cfg.physWarmestMirek][sel - 128];
+  }
+  if (sel >= 192 && sel <= 208) return fromSet(d.temp, sel - 192, d.tempMode);
+  if (sel >= 224 && sel <= 240) return fromSet(d.report, sel - 224, d.mode);
   return undefined;
 }
 
